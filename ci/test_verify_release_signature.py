@@ -1,3 +1,4 @@
+import hashlib
 import subprocess
 import tempfile
 import unittest
@@ -35,12 +36,34 @@ class ReleaseSignatureTest(unittest.TestCase):
         )
 
     @patch("verify_release_signature.subprocess.run")
-    def test_rejects_different_certificate(self, run):
+    def test_retains_only_verified_apk_and_checksum(self, run):
+        contents = b"signed production apk"
+        self.apk.write_bytes(contents)
+        run.return_value = subprocess.CompletedProcess(
+            [], 0, f"Signer #1 certificate SHA-256 digest: {EXPECTED_CERTIFICATE_SHA256}\n", "",
+        )
+        artifact_directory = Path(self.temporary_directory.name) / "dist"
+        verify_release_signature(self.apk, self.apksigner, artifact_directory)
+        self.assertEqual(
+            sorted(path.name for path in artifact_directory.iterdir()),
+            ["SHA256SUMS", "TAK-CAD-production.apk"],
+        )
+        artifact = artifact_directory / "TAK-CAD-production.apk"
+        self.assertEqual(artifact.read_bytes(), contents)
+        self.assertEqual(
+            (artifact_directory / "SHA256SUMS").read_text(),
+            f"{hashlib.sha256(contents).hexdigest()}  TAK-CAD-production.apk\n",
+        )
+
+    @patch("verify_release_signature.subprocess.run")
+    def test_rejects_different_certificate_without_retaining_apk(self, run):
         run.return_value = subprocess.CompletedProcess(
             [], 0, "Signer #1 certificate SHA-256 digest: " + "a" * 64, "",
         )
+        artifact_directory = Path(self.temporary_directory.name) / "dist"
         with self.assertRaisesRegex(RuntimeError, "Unexpected APK signer"):
-            verify_release_signature(self.apk, self.apksigner)
+            verify_release_signature(self.apk, self.apksigner, artifact_directory)
+        self.assertFalse(artifact_directory.exists())
 
     @patch("verify_release_signature.subprocess.run")
     def test_rejects_multiple_signers(self, run):
@@ -89,6 +112,15 @@ class ReleaseSignatureTest(unittest.TestCase):
         self.assertIn("ci/verify_release_signature.py", pipeline)
         self.assertIn("after_script:", pipeline)
         self.assertNotIn("release create", pipeline)
+        verifier = pipeline.index("ci/verify_release_signature.py")
+        artifact_source = pipeline.index("app/build/outputs/apk/release/app-release.apk", verifier)
+        self.assertIn("dist", pipeline[artifact_source:pipeline.index("fi", artifact_source)])
+        self.assertIn("expire_in: 30 days", pipeline)
+        self.assertIn("dist/TAK-CAD-production.apk", pipeline)
+        self.assertIn("dist/SHA256SUMS", pipeline)
+        artifact_section = pipeline[pipeline.index("  artifacts:", pipeline.index("forge-verify:")):]
+        self.assertNotIn("app/build/outputs/apk/debug", artifact_section)
+        self.assertNotIn("app/build/outputs/apk/release", artifact_section)
 
     def test_signing_properties_are_ignored(self):
         self.assertIn(
