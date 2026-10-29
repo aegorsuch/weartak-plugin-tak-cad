@@ -31,6 +31,30 @@ forge-verify:
   before_script:
     - apt-get update -qq
     - apt-get install -y --no-install-recommends python3 git ca-certificates
+    - |
+      set -eu
+      if [ "${CI_COMMIT_BRANCH:-}" = "${CI_DEFAULT_BRANCH:-}" ] \
+        && [ "${CI_COMMIT_REF_PROTECTED:-false}" = "true" ] \
+        && [ "${CI_PIPELINE_SOURCE:-}" = "push" ]; then
+        for var in WEARTAK_RELEASE_KEYSTORE_B64 RELEASE_STORE_PASSWORD RELEASE_KEY_ALIAS RELEASE_KEY_PASSWORD; do
+          if [ -z "$(printenv "$var")" ]; then
+            echo "ERROR: Missing required protected signing variable: $var" >&2
+            exit 1
+          fi
+        done
+        printf '%s' "$WEARTAK_RELEASE_KEYSTORE_B64" | base64 --decode > "$CI_PROJECT_DIR/app/weartak.keystore"
+        chmod 600 "$CI_PROJECT_DIR/app/weartak.keystore"
+        cat > "$CI_PROJECT_DIR/signing.properties" <<EOF
+      RELEASE_KEYSTORE_FILE=app/weartak.keystore
+      RELEASE_STORE_PASSWORD=$RELEASE_STORE_PASSWORD
+      RELEASE_KEY_ALIAS=$RELEASE_KEY_ALIAS
+      RELEASE_KEY_PASSWORD=$RELEASE_KEY_PASSWORD
+      EOF
+        chmod 600 "$CI_PROJECT_DIR/signing.properties"
+        keytool -list -keystore "$CI_PROJECT_DIR/app/weartak.keystore" \
+          -storepass "$RELEASE_STORE_PASSWORD" -alias "$RELEASE_KEY_ALIAS" >/dev/null
+        echo "Protected WearTAK production signing configuration verified."
+      fi
   script:
     - python3 -m unittest discover -s ci -p "test_*.py" -v
     - python3 ci/setup_android.py
@@ -38,6 +62,16 @@ forge-verify:
     - gradle --no-daemon --console=plain -p "$WEARTAK_SDK_SOURCE" testDebugUnitTest testReleaseUnitTest assembleDebug assembleRelease
     - test -f "$WEARTAK_PLUGIN_SDK_AAR"
     - gradle --no-daemon --console=plain :app:testDebugUnitTest :app:testReleaseUnitTest :app:assembleDebug :app:assembleRelease :app:lintDebug :app:lintRelease
+    - |
+      if [ "${CI_COMMIT_BRANCH:-}" = "${CI_DEFAULT_BRANCH:-}" ] \
+        && [ "${CI_COMMIT_REF_PROTECTED:-false}" = "true" ] \
+        && [ "${CI_PIPELINE_SOURCE:-}" = "push" ]; then
+        python3 ci/verify_release_signature.py \
+          app/build/outputs/apk/release/app-release.apk \
+          "$ANDROID_HOME/build-tools/34.0.0/apksigner"
+      fi
+  after_script:
+    - rm -f "$CI_PROJECT_DIR/app/weartak.keystore" "$CI_PROJECT_DIR/signing.properties"
   artifacts:
     when: always
     expire_in: 14 days
@@ -51,5 +85,5 @@ forge-verify:
         - app/build/test-results/test*UnitTest/TEST-*.xml
         - .ci-sdk/build/test-results/test*UnitTest/TEST-*.xml
 
-# No publish job: app has no authorized production signing configuration.
-# Debug and unsigned release APKs are deliberately excluded from artifacts.
+# Production signing is checked only on protected default-branch pushes using the
+# inherited masked variables. No APK is retained or published by this pipeline.

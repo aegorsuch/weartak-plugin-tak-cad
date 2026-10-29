@@ -27,6 +27,8 @@ android {
     testOptions { unitTests.isIncludeAndroidResources = true }
 }
 
+apply(from = rootProject.file("gradle/weartak-sideload-production.gradle"))
+
 dependencies {
     implementation(files(sdkAar))
     testImplementation("junit:junit:4.13.2")

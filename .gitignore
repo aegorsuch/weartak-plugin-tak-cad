@@ -19,3 +19,4 @@ local.properties
 __pycache__/
 .ci-tools/
 .ci-sdk/
+signing.properties

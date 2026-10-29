@@ -107,7 +107,7 @@ GitLab remote is not automatically mirrored/pushed by these files.
 CI helper checks: `python -m unittest discover -s ci -p "test_*.py" -v` and
 `node --test ci/release-testing/create_checklist.test.cjs`.
 
-## TAK.gov Forge CI (publication blocked)
+## TAK.gov Forge CI signing and publication
 
 Canonical source is `weartak-plugins/weartak-plugin-tak-cad` on
 `git.tak.gov`, default branch `main`. `.gitlab-ci.yml` verifies merge requests,
@@ -124,25 +124,36 @@ tests run on both platforms; checklist tests use a separate Node 22 job rather
 than the Gradle image's outdated distribution Node. Runner images are pinned by
 digest. Forge tests/builds both SDK variants, then tests,
 assembles, and lints both plugin variants. Only test/lint reports are retained
-for 14 days, including JUnit reports on failure; APKs, SDK binaries, and signing
-material are not uploaded.
+for 14 days, including JUnit reports on failure; APKs and signing material are
+not uploaded.
 
-**No Forge publisher or rolling GitHub release is enabled.** `app/build.gradle.kts`
-has no production signing configuration: `assembleRelease` produces an unsigned
-APK, while `assembleDebug` uses a generated debug certificate that normally
-cannot bind the WearTAK host's signature-protected service. Neither is an approved
-production distributable. Existing GitHub debug-prerelease/checklist automation
-above remains separate and unchanged; it does not make Forge publication safe.
+`gradle/weartak-sideload-production.gradle` uses the same signing configuration
+as Sextant and LACE. An ignored root `signing.properties` may configure local
+release signing, or `WEARTAK_SIGNING_PROPERTIES` may point to a shared properties
+file. Relative keystore paths resolve beside that file. Never commit signing
+properties or keystores. Local debug builds remain debug-signed.
 
-Future publication must target only personal
-`aegorsuch/weartak-plugin-tak-cad`, never a company repository. Before enabling it,
-owner must provide authorized host-matching release signing and review SDK
-distribution rights. Publisher must verify release signature, expected certificate
-fingerprint, package/version and non-debuggable status before upload; use
-protected tags/runners and masked protected credentials scoped to that personal
-repository, serialize updates to a fixed rolling-release tag, and include
-checksums plus source revision provenance. No credentials, GitLab variables,
-protected refs, releases, or remote settings were created or changed here.
+On a **protected default-branch push only**, Forge requires inherited group
+variables `WEARTAK_RELEASE_KEYSTORE_B64`, `RELEASE_STORE_PASSWORD`,
+`RELEASE_KEY_ALIAS`, and `RELEASE_KEY_PASSWORD`. The existing `weartak-plugins`
+group config documents these as protected/masked; this job consumes them without
+changing group/project variables. It writes the keystore and ignored signing
+properties with restrictive permissions, validates the alias, signs the release
+APK, verifies Android APK signature and certificate SHA-256
+`1579b600cd84e619e76a91c2db6b031938c999bc2aad926b9a51ec2b166d348d`, then
+removes signing files. This is the SHA-256 pinned by both Sextant and LACE
+production-release pipelines for WearTAK's signature-protected plugin binding.
+Merge-request builds do not receive protected signing credentials and continue
+to validate unsigned release assembly. The signed artifact has **not** been
+verified until a protected default-branch pipeline passes its certificate check.
+
+**No Forge publisher or rolling GitHub release is enabled.** Signed APKs are
+excluded from CI artifacts and are not published to GitHub. Any future publisher
+requires separate authorization and must target only personal
+`aegorsuch/weartak-plugin-tak-cad`, never a company repository, after SDK
+distribution rights review. No credentials, GitLab variables, protected refs,
+releases, or remote settings were created or changed here. Existing GitHub
+debug-prerelease/checklist automation above remains separate and unchanged.
 
 ## Required host integration
 
