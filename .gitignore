@@ -17,3 +17,5 @@ local.properties
 .idea/
 *.iml
 __pycache__/
+.ci-tools/
+.ci-sdk/

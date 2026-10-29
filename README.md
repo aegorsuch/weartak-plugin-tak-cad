@@ -107,6 +107,43 @@ GitLab remote is not automatically mirrored/pushed by these files.
 CI helper checks: `python -m unittest discover -s ci -p "test_*.py" -v` and
 `node --test ci/release-testing/create_checklist.test.cjs`.
 
+## TAK.gov Forge CI (publication blocked)
+
+Canonical source is `weartak-plugins/weartak-plugin-tak-cad` on
+`git.tak.gov`, default branch `main`. `.gitlab-ci.yml` verifies merge requests,
+branch pushes, tags, and manual pipelines; push pipelines are suppressed when an
+open merge request already provides coverage. Requires a Linux Docker-compatible
+runner with outbound access to Google Android downloads/Maven, Gradle/Maven
+repositories, Docker Hub, and the public personal SDK mirror on GitHub.
+No Forge variables or credentials are required for the public SDK.
+
+Forge uses Gradle 8.10.2 / JDK 17 and SHA-256-verified Android command-line tools
+12.0 to install platform/build-tools 34.0.0. SDK licenses are accepted on this
+ephemeral CI runner. The same pinned SDK provisioning helper and Python/Node CI
+tests run on both platforms; checklist tests use a separate Node 22 job rather
+than the Gradle image's outdated distribution Node. Runner images are pinned by
+digest. Forge tests/builds both SDK variants, then tests,
+assembles, and lints both plugin variants. Only test/lint reports are retained
+for 14 days, including JUnit reports on failure; APKs, SDK binaries, and signing
+material are not uploaded.
+
+**No Forge publisher or rolling GitHub release is enabled.** `app/build.gradle.kts`
+has no production signing configuration: `assembleRelease` produces an unsigned
+APK, while `assembleDebug` uses a generated debug certificate that normally
+cannot bind the WearTAK host's signature-protected service. Neither is an approved
+production distributable. Existing GitHub debug-prerelease/checklist automation
+above remains separate and unchanged; it does not make Forge publication safe.
+
+Future publication must target only personal
+`aegorsuch/weartak-plugin-tak-cad`, never a company repository. Before enabling it,
+owner must provide authorized host-matching release signing and review SDK
+distribution rights. Publisher must verify release signature, expected certificate
+fingerprint, package/version and non-debuggable status before upload; use
+protected tags/runners and masked protected credentials scoped to that personal
+repository, serialize updates to a fixed rolling-release tag, and include
+checksums plus source revision provenance. No credentials, GitLab variables,
+protected refs, releases, or remote settings were created or changed here.
+
 ## Required host integration
 
 **Current template SDK has no incoming CoT subscription API.** Its
