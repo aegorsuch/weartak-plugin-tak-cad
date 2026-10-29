@@ -1,0 +1,137 @@
+name: Android CI and debug release
+
+on:
+  pull_request:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+      - name: Install Android build platform
+        run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
+      - uses: gradle/actions/setup-gradle@48b5f213c81028ace310571dc5ec0fbbca0b2947 # v4
+        with:
+          gradle-version: '8.10.2'
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+      - name: Test SDK provisioning safeguards
+        run: |
+          python3 -m unittest discover -s ci -p "test_*.py" -v
+          node --test ci/release-testing/create_checklist.test.cjs
+      - name: Validate release tag
+        if: ${{ startsWith(github.ref, 'refs/tags/') }}
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9A-Za-z._-]{1,100}$ ]]; then
+            echo "::error::Release tags must begin with v and contain only letters, digits, dot, underscore or hyphen."
+            exit 1
+          fi
+      - name: Check out pinned SDK source
+        env:
+          WEARTAK_SDK_REVISION: ${{ vars.WEARTAK_SDK_REVISION }}
+          WEARTAK_SDK_TOKEN: ${{ secrets.WEARTAK_SDK_TOKEN }}
+        run: python3 ci/fetch_sdk.py
+      - name: Test and build SDK from pinned source
+        run: |
+          gradle --no-daemon --console=plain -p "$WEARTAK_SDK_SOURCE" \
+            testDebugUnitTest testReleaseUnitTest assembleDebug assembleRelease
+          test -f "$WEARTAK_PLUGIN_SDK_AAR"
+      - name: Unit tests, debug build, and lint
+        run: gradle --no-daemon --console=plain :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
+      - name: Upload reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: android-reports
+          path: |
+            app/build/reports/
+            app/build/test-results/
+          if-no-files-found: ignore
+      - name: Stage explicitly debug-signed package
+        if: ${{ startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push' }}
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/app-debug.apk dist/TAK-CAD-debug-not-production-signed.apk
+          cd dist
+          sha256sum TAK-CAD-debug-not-production-signed.apk > SHA256SUMS
+      - name: Upload verified release candidate
+        if: ${{ startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: debug-release
+          path: dist/
+          if-no-files-found: error
+
+  release:
+    needs: verify
+    if: ${{ startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: debug-release
+          path: dist
+      - name: Verify package checksum
+        working-directory: dist
+        run: sha256sum --check SHA256SUMS
+      - name: Publish debug prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          printf '%s\n' \
+            'Debug-signed testing build, NOT production signed.' \
+            'Generated debug certificate will not match a normally signed WearTAK host; signature-protected binding requires authorized matching signing.' \
+            'Requires host ACTION renderer and incoming CoT bridge. Hosted secure token input, CAD tasks/notes/history remain unsupported.' \
+            'Unit tests, assembleDebug, and lintDebug passed for this tag. Verify SDK distribution rights before publishing.' > release-notes.txt
+          gh release create "$RELEASE_TAG" dist/TAK-CAD-debug-not-production-signed.apk dist/SHA256SUMS \
+            --verify-tag --prerelease --title "TAK-CAD $RELEASE_TAG - debug testing only" --notes-file release-notes.txt
+
+  checklist:
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: release-testing-${{ github.ref_name }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      # GITHUB_TOKEN-created releases do not trigger another workflow automatically.
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          persist-credentials: false
+          sparse-checkout: ci/release-testing
+      - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TESTER: ${{ vars.RELEASE_TESTER }}
+        with:
+          script: |
+            const { createChecklist } = require('./ci/release-testing/create_checklist.cjs');
+            await createChecklist({ github, context, core, tag: process.env.RELEASE_TAG, tester: process.env.RELEASE_TESTER });

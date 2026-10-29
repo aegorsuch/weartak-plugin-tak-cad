@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TAK-CAD</string>
+    <string name="empty">No incident asks. Enable plugin in WearTAK. Incoming CoT forwarding requires host integration; see README.</string>
+    <string name="accept">Accept ask</string>
+    <string name="decline">Decline locally</string>
+    <string name="refresh_route">Refresh route</string>
+    <string name="responders">Responder ETAs</string>
+    <string name="no_responders">No responder routes received.</string>
+    <string name="unsupported">Task assignments, incident type, shared notes, and location history need a dispatcher protocol extension. Upstream exposes title and summary only.</string>
+    <string name="configuration">Routing setup</string>
+    <string name="responder_uid">WearTAK self UID</string>
+    <string name="ors_key">OpenRouteService API key</string>
+    <string name="save">Save setup</string>
+    <string name="key_hint">Leave blank to keep stored key</string>
+    <string name="clear_key">Remove stored API key</string>
+    <string name="routing_disclosure">Routing sends your GPS location and incident destination to OpenRouteService. Saving setup enables routing for accepted asks. Key stays encrypted on this device.</string>
+    <string name="previous">Previous instruction</string>
+    <string name="next">Next instruction</string>
+    <string name="guidance">Route instructions</string>
+    <string name="guidance_notice">Follow signs and local conditions. Steps advance manually; route refresh resets instructions. Not automatic maneuver tracking.</string>
+    <string name="route_unavailable">No route. Configure key and self UID, then refresh while connected.</string>
+    <string name="estimate">%1$s: %2$d min estimate (%3$ds old)%4$s</string>
+    <string name="stale"> — STALE</string>
+    <string name="route_attribution">Routing: © openrouteservice.org by HeiGIT | Map data © OpenStreetMap contributors</string>
+    <string name="key_saved">API key configured</string>
+    <string name="key_missing">API key not configured</string>
+    <string name="own_route">Your route</string>
+    <string name="state_observed">Observed - no ask received</string>
+    <string name="state_asked">Asked - acceptance required</string>
+    <string name="state_declined">Declined on this watch</string>
+    <string name="state_responding">Responding - delivery unconfirmed</string>
+</resources>
