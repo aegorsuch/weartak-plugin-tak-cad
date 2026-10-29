@@ -68,22 +68,27 @@ forge-verify:
         && [ "${CI_PIPELINE_SOURCE:-}" = "push" ]; then
         python3 ci/verify_release_signature.py \
           app/build/outputs/apk/release/app-release.apk \
-          "$ANDROID_HOME/build-tools/34.0.0/apksigner"
+          "$ANDROID_HOME/build-tools/34.0.0/apksigner" \
+          dist
       fi
   after_script:
     - rm -f "$CI_PROJECT_DIR/app/weartak.keystore" "$CI_PROJECT_DIR/signing.properties"
   artifacts:
     when: always
-    expire_in: 14 days
+    name: "TAK-CAD-${CI_COMMIT_SHORT_SHA}"
+    expire_in: 30 days
     paths:
       - app/build/reports/
       - app/build/test-results/
       - .ci-sdk/build/reports/
       - .ci-sdk/build/test-results/
+      - dist/TAK-CAD-production.apk
+      - dist/SHA256SUMS
     reports:
       junit:
         - app/build/test-results/test*UnitTest/TEST-*.xml
         - .ci-sdk/build/test-results/test*UnitTest/TEST-*.xml
 
 # Production signing is checked only on protected default-branch pushes using the
-# inherited masked variables. No APK is retained or published by this pipeline.
+# inherited masked variables. Only the certificate-verified APK and SHA256SUMS are
+# retained for 30 days. No GitHub APK publisher is enabled.

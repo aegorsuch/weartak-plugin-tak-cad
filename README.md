@@ -123,9 +123,8 @@ ephemeral CI runner. The same pinned SDK provisioning helper and Python/Node CI
 tests run on both platforms; checklist tests use a separate Node 22 job rather
 than the Gradle image's outdated distribution Node. Runner images are pinned by
 digest. Forge tests/builds both SDK variants, then tests,
-assembles, and lints both plugin variants. Only test/lint reports are retained
-for 14 days, including JUnit reports on failure; APKs and signing material are
-not uploaded.
+assembles, and lints both plugin variants. Reports and JUnit results are retained
+for 30 days, including on failure.
 
 `gradle/weartak-sideload-production.gradle` uses the same signing configuration
 as Sextant and LACE. An ignored root `signing.properties` may configure local
@@ -147,9 +146,18 @@ Merge-request builds do not receive protected signing credentials and continue
 to validate unsigned release assembly. The signed artifact has **not** been
 verified until a protected default-branch pipeline passes its certificate check.
 
-**No Forge publisher or rolling GitHub release is enabled.** Signed APKs are
-excluded from CI artifacts and are not published to GitHub. Any future publisher
-requires separate authorization and must target only personal
+After successful signature verification, the protected-main Forge job retains
+only `dist/TAK-CAD-production.apk` and its `dist/SHA256SUMS` checksum as a
+downloadable CI artifact for 30 days, matching Sextant/LACE main-build artifact
+retention. The APK is copied into that artifact directory only after exact
+certificate verification succeeds. Merge requests, unprotected branches, failed
+signatures, and debug builds cannot create this production artifact. Signing
+keystore/properties are removed before artifact upload; no APK or signing material
+is committed.
+
+**No Forge GitHub publisher or rolling release is enabled.** The APK is not
+published to GitHub. Any future publisher requires separate authorization and
+must target only personal
 `aegorsuch/weartak-plugin-tak-cad`, never a company repository, after SDK
 distribution rights review. No credentials, GitLab variables, protected refs,
 releases, or remote settings were created or changed here. Existing GitHub
