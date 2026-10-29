@@ -1,0 +1,17 @@
+WearTAK TAK-CAD responder plugin
+
+Protocol compatibility is based on TAK-CAD by Raytheon Technologies:
+https://github.com/raytheonbbn/tak-cad
+Revision: 9f60ae056057b7496c65688e3f4acd86a398438f
+Upstream source notices: Copyright (c) 2023 Raytheon Technologies
+Upstream source license: GNU GPL version 3 or, at your option, any later version.
+
+This source implementation is distributed under GPL-3.0-or-later.
+See LICENSE for the complete GNU General Public License version 3.
+No upstream binaries, certificates, signing credentials, or graphical assets
+are included. The separately supplied WearTAK plugin SDK and build dependencies
+retain their respective licenses. Verify their distribution terms before shipping.
+
+Route data attribution, when routing is enabled:
+openrouteservice.org by HeiGIT
+Map data: OpenStreetMap contributors
