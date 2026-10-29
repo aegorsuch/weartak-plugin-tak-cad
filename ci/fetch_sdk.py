@@ -1,5 +1,6 @@
 """Check out reviewed WearTAK SDK source at an immutable revision for CI builds."""
 
+import argparse
 import base64
 import os
 from pathlib import Path
@@ -57,13 +58,25 @@ def checkout_sdk(directory, revision, token):
     return directory
 
 
-def main():
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--directory", type=Path, help="SDK checkout directory (must not exist).")
+    parser.add_argument("--checkout-only", action="store_true", help="Do not append paths to GITHUB_ENV.")
+    args = parser.parse_args(argv)
+    if args.directory is None:
+        if not os.environ.get("RUNNER_TEMP"):
+            parser.error("Pass --directory or set RUNNER_TEMP.")
+        args.directory = Path(os.environ["RUNNER_TEMP"]) / "weartak-plugin-sdk"
+    if not args.checkout_only and not os.environ.get("GITHUB_ENV"):
+        parser.error("Set GITHUB_ENV or pass --checkout-only.")
+
     revision = os.environ.get("WEARTAK_SDK_REVISION", "").strip() or DEFAULT_SDK_REVISION
     token = os.environ.get("WEARTAK_SDK_TOKEN", "")
-    directory = checkout_sdk(Path(os.environ["RUNNER_TEMP"]) / "weartak-plugin-sdk", revision, token)
-    with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as environment:
-        environment.write(f"WEARTAK_SDK_SOURCE={directory}\n")
-        environment.write(f"WEARTAK_PLUGIN_SDK_AAR={directory / 'build/outputs/aar/weartak-plugin-sdk-debug.aar'}\n")
+    directory = checkout_sdk(args.directory, revision, token)
+    if not args.checkout_only:
+        with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as environment:
+            environment.write(f"WEARTAK_SDK_SOURCE={directory}\n")
+            environment.write(f"WEARTAK_PLUGIN_SDK_AAR={directory / 'build/outputs/aar/weartak-plugin-sdk-debug.aar'}\n")
     print(f"Verified SDK source revision {revision}; build source before compiling plugin.")
 
 

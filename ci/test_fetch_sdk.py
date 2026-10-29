@@ -1,10 +1,11 @@
 from pathlib import Path
+import os
 import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
 
-from fetch_sdk import DEFAULT_SDK_REVISION, SDK_REPOSITORY, checkout_sdk, git_environment, validate_revision
+from fetch_sdk import DEFAULT_SDK_REVISION, SDK_REPOSITORY, checkout_sdk, git_environment, main, validate_revision
 
 
 class SdkProvisioningTest(unittest.TestCase):
@@ -49,6 +50,36 @@ class SdkProvisioningTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "verify published commit") as error:
                 checkout_sdk(Path(root) / "sdk", "a" * 40, "")
             self.assertNotIn("sensitive", str(error.exception))
+
+    def test_revision_mismatch_is_rejected(self):
+        with tempfile.TemporaryDirectory() as root, patch("fetch_sdk.subprocess.run") as run:
+            run.return_value = subprocess.CompletedProcess([], 0, "b" * 40, "")
+            with self.assertRaisesRegex(RuntimeError, "revision mismatch"):
+                checkout_sdk(Path(root) / "sdk", "a" * 40, "")
+
+    def test_forge_checkout_does_not_require_github_environment(self):
+        with tempfile.TemporaryDirectory() as root, patch.dict(os.environ, {}, clear=True), \
+                patch("fetch_sdk.checkout_sdk") as checkout:
+            directory = Path(root) / "sdk"
+            checkout.return_value = directory
+            main(["--directory", str(directory), "--checkout-only"])
+            checkout.assert_called_once_with(directory, DEFAULT_SDK_REVISION, "")
+
+    def test_github_defaults_still_export_sdk_paths(self):
+        with tempfile.TemporaryDirectory() as root:
+            environment_file = Path(root) / "github-env"
+            with patch.dict(os.environ, {
+                "RUNNER_TEMP": root, "GITHUB_ENV": str(environment_file),
+                "WEARTAK_SDK_REVISION": "b" * 40, "WEARTAK_SDK_TOKEN": "synthetic-token",
+            }, clear=True), patch("fetch_sdk.checkout_sdk") as checkout:
+                directory = Path(root) / "weartak-plugin-sdk"
+                checkout.return_value = directory
+                main([])
+                checkout.assert_called_once_with(directory, "b" * 40, "synthetic-token")
+                self.assertEqual(environment_file.read_text().splitlines(), [
+                    f"WEARTAK_SDK_SOURCE={directory}",
+                    f"WEARTAK_PLUGIN_SDK_AAR={directory / 'build/outputs/aar/weartak-plugin-sdk-debug.aar'}",
+                ])
 
 
 if __name__ == "__main__":
