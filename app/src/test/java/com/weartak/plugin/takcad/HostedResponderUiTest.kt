@@ -51,7 +51,7 @@ class HostedResponderUiTest {
         val open = schema.cards.single { it.cardId == "takcad.incident.open" }
         assertEquals("ACTION", open.cardType)
         assertEquals("takcad.incident.open", open.content.getString("actionId"))
-        assertEquals("Open incident", open.content.getString("actionLabel"))
+        assertTrue(open.content.getString("actionLabel")!!.startsWith(ASK.title))
         assertEquals(ASK.id, JSONObject(open.content.getString("actionArgsJson")!!).getString("incidentId"))
         assertTrue(open.content.getBoolean("enabled"))
         ui.invoke("takcad.incident.open", idArgs)
@@ -61,6 +61,15 @@ class HostedResponderUiTest {
         assertTrue(details.cards.single { it.cardId == "details" }.subtitle!!.contains(ASK.title))
         assertFalse(details.toString().contains("secret-must-not"))
         assertFalse(details.cards.any { it.content.keySet().any { key -> key.contains("key", true) || key.contains("token", true) } })
+        assertFalse(details.cards.any { it.cardId == "limits" })
+    }
+
+    @Test fun emptyListHasNoIntegrationHelperText() {
+        val schema = ui.schema()
+        assertEquals("No incidents", schema.cards.single { it.cardId == "empty" }.title)
+        assertEquals("", schema.cards.single { it.cardId == "empty" }.subtitle)
+        assertFalse(schema.toString().contains("requires host integration"))
+        assertFalse(schema.cards.any { it.cardId == "limits" })
     }
 
     @Test fun routeAndResponderNavigationRemainInsideSchema() {

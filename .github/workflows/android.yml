@@ -28,7 +28,7 @@ jobs:
           java-version: '17'
       - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
       - name: Install Android build platform
-        run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
+        run: sdkmanager "platforms;android-34" "platforms;android-35" "build-tools;34.0.0"
       - uses: gradle/actions/setup-gradle@48b5f213c81028ace310571dc5ec0fbbca0b2947 # v4
         with:
           gradle-version: '8.10.2'
@@ -56,6 +56,15 @@ jobs:
           gradle --no-daemon --console=plain -p "$WEARTAK_SDK_SOURCE" \
             testDebugUnitTest testReleaseUnitTest assembleDebug assembleRelease
           test -f "$WEARTAK_PLUGIN_SDK_AAR"
+      - name: Check out pinned Host Services SDK source
+        env:
+          WEARTAK_HOST_SDK_REVISION: ${{ vars.WEARTAK_HOST_SDK_REVISION }}
+        run: python3 ci/fetch_host_sdk.py
+      - name: Build standalone Host Services SDK
+        run: |
+          bash "$WEARTAK_HOST_SDK_SOURCE/gradlew" --no-daemon --console=plain \
+            -p "$WEARTAK_HOST_SDK_SOURCE/weartak-plugin-host-services-sdk" assembleRelease
+          test -f "$WEARTAK_HOST_SERVICES_SDK_AAR"
       - name: Unit tests, debug build, and lint
         run: gradle --no-daemon --console=plain :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
       - name: Upload reports

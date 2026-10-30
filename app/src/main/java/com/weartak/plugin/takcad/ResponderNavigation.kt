@@ -2,7 +2,10 @@
 package com.weartak.plugin.takcad
 
 /** Navigation stays plugin-owned; host supplies rendering and authenticated action delivery. */
-class ResponderNavigation(private val store: IncidentStore) {
+class ResponderNavigation(
+    private val store: IncidentStore,
+    private val list: () -> List<Incident> = store::snapshot,
+) {
     private var selectedId: String? = null
     private var incidentOffset = 0
     private var responderOffset = 0
@@ -18,7 +21,7 @@ class ResponderNavigation(private val store: IncidentStore) {
     )
 
     @Synchronized fun snapshot(): Snapshot {
-        val incidents = store.snapshot()
+        val incidents = list()
         val incident = incidents.firstOrNull { it.ask.id == selectedId }
         if (incident == null) selectedId = null
         incidentOffset = incidentOffset.coerceIn(0, (incidents.size - 1).coerceAtLeast(0))
@@ -32,7 +35,7 @@ class ResponderNavigation(private val store: IncidentStore) {
     }
 
     @Synchronized fun select(id: String) {
-        require(store.snapshot().any { it.ask.id == id }) { "Incident not found" }
+        require(list().any { it.ask.id == id }) { "Incident not found" }
         selectedId = id
         responderOffset = 0
         instructionIndex = 0

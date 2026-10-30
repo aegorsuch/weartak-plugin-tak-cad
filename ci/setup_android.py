@@ -37,7 +37,7 @@ def install_android(directory):
         stdout=subprocess.DEVNULL, check=True, timeout=300,
     )
     subprocess.run(
-        [*command, "platforms;android-34", "build-tools;34.0.0", "platform-tools"],
+        [*command, "platforms;android-34", "platforms;android-35", "build-tools;34.0.0", "platform-tools"],
         check=True, timeout=900,
     )
 

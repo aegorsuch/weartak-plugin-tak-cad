@@ -40,7 +40,10 @@ data class Route(val json: String, val seconds: Double, val steps: List<String>)
 }
 
 sealed interface CadEvent {
-    data class Ask(val id: String, val title: String, val summary: String, val position: Position) : CadEvent
+    data class Ask(
+        val id: String, val title: String, val summary: String, val position: Position?,
+        val canonical: CanonicalIncident? = null,
+    ) : CadEvent
     data class Response(
         val incidentId: String,
         val uid: String,
@@ -66,6 +69,9 @@ object CadProtocol {
         var uid: String? = null
         var detailDepth = -1
         val text = StringBuilder()
+        val canonicalText = StringBuilder()
+        var canonicalDepth = -1
+        var canonicalSeen = false
         var seenRoot = false
         while (parser.eventType != XmlPullParser.END_DOCUMENT) {
             when (parser.eventType) {
@@ -77,13 +83,25 @@ object CadProtocol {
                         uid = parser.getAttributeValue(null, "uid")
                     }
                     if (parser.name == "detail" && parser.depth == 2) detailDepth = parser.depth
+                    if (parser.name == "__takCadIncidentDetails" && parser.depth == 3 && detailDepth == 2) {
+                        require(!canonicalSeen) { "Duplicate canonical incident detail" }
+                        canonicalSeen = true
+                        canonicalDepth = parser.depth
+                    }
                 }
-                XmlPullParser.TEXT -> if (detailDepth > 0) text.append(parser.text)
-                XmlPullParser.END_TAG -> if (parser.depth == detailDepth) detailDepth = -1
+                XmlPullParser.TEXT -> {
+                    if (detailDepth > 0) text.append(parser.text)
+                    if (canonicalDepth > 0) canonicalText.append(parser.text)
+                }
+                XmlPullParser.END_TAG -> {
+                    if (parser.depth == detailDepth) detailDepth = -1
+                    if (parser.depth == canonicalDepth) canonicalDepth = -1
+                }
             }
             parser.next()
         }
         require(seenRoot) { "Missing CoT event" }
+        if (canonicalSeen) return CanonicalIncident.parse(canonicalText.toString()).ask()
         if (how !in setOf(INCIDENT, RESPONSE, UPDATE)) return null
         val metadata = JSONObject(text.toString())
         val id = metadata.requiredText("incident_id", 256)
@@ -106,13 +124,15 @@ object CadProtocol {
         incident: CadEvent.Ask, uid: String, callsign: String, version: Int, route: Route,
         now: Long, responderPosition: Position,
     ): String {
+        require(incident.canonical == null) { "Canonical responses require authenticated CAD server access" }
+        val destination = requireNotNull(incident.position) { "Incident location unavailable" }
         require(uid.isNotBlank() && uid.length <= 256 && callsign.isNotBlank() && callsign.length <= 256)
         require(version >= 0)
         val data = JSONObject().put("incident_id", incident.id).put("callsign", callsign)
             .put("version", version.toString()).put("directions", route.json)
         if (version == 0) {
             data.put("title", incident.title).put("summary", incident.summary)
-                .put("latitude", incident.position.latitude.toString()).put("longitude", incident.position.longitude.toString())
+                .put("latitude", destination.latitude.toString()).put("longitude", destination.longitude.toString())
         }
         val out = java.io.StringWriter()
         val serializer = Xml.newSerializer()
