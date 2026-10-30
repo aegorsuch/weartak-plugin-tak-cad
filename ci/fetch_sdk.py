@@ -9,7 +9,7 @@ import subprocess
 import sys
 
 SDK_REPOSITORY = "https://github.com/aegorsuch/weartak-plugin-sdk.git"
-DEFAULT_SDK_REVISION = "a4f784338efb1d8eb048591a4a3f57b3f7e8ffa3"
+DEFAULT_SDK_REVISION = "e2ee52402cf5738e86e43c3f6f1ce1594bd6e5ec"
 
 
 def validate_revision(revision):

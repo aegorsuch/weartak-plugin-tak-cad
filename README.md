@@ -66,7 +66,7 @@ path or unverified binary fallback exists in CI.
 CI builds the public SDK source mirror:
 `https://github.com/aegorsuch/weartak-plugin-sdk.git`.
 Default SDK revision is exact published GitHub commit
-[`a4f784338efb1d8eb048591a4a3f57b3f7e8ffa3`](https://github.com/aegorsuch/weartak-plugin-sdk/commit/a4f784338efb1d8eb048591a4a3f57b3f7e8ffa3),
+[`e2ee52402cf5738e86e43c3f6f1ce1594bd6e5ec`](https://github.com/aegorsuch/weartak-plugin-sdk/commit/e2ee52402cf5738e86e43c3f6f1ce1594bd6e5ec),
 including compatible v3 and ACTION APIs, matching canonical
 [SDK merge request 2](https://git.tak.gov/weartak-plugins/weartak-plugin-sdk/-/merge_requests/2).
 Repository variable
@@ -115,7 +115,26 @@ branch pushes, tags, and manual pipelines; push pipelines are suppressed when an
 open merge request already provides coverage. Requires a Linux Docker-compatible
 runner with outbound access to Google Android downloads/Maven, Gradle/Maven
 repositories, Docker Hub, and the public personal SDK mirror on GitHub.
-No Forge variables or credentials are required for the public SDK.
+SDK source checkout remains public. Forge includes the shared TAK Artifactory
+token-service template and exchanges job identity for an ephemeral token before
+every Gradle build, including the separate SDK build. The root Gradle image uses
+`.artifactory_service_create_token_bash`; no bundled repository init script is
+installed. Token values must never be logged. If exchange requires account
+registration, sign in at `https://artifacts.tak.gov` before retrying.
+Existing approved read-only consumer aliases remain supported. User selection uses the
+first nonblank `ARTIFACTORY_CONSUME_USER`, `ARTIFACTORY_USER`, or `TAK_USERNAME`;
+password selection independently uses `ARTIFACTORY_CONSUME_PASSWORD`,
+`ARTIFACTORY_PASSWORD`, or `TAK_PASSWORD`. Both are required. The runner preflight
+reports availability booleans only and fails explicitly when the pair is missing.
+No variable values are retrieved through administration APIs.
+
+Plugin Gradle plugin and dependency repositories put
+`https://artifacts.tak.gov/artifactory/maven-release` first when credentials are
+available, preserving Google, Maven Central, and Gradle Plugin Portal fallbacks.
+Robolectric's independent test-JVM downloads use the same authenticated repository.
+The separately checked-out SDK must also contain this supported repository
+configuration at its pinned revision; plugin settings do not affect SDK builds.
+Local builds without the pair retain public repositories.
 
 Forge uses Gradle 8.10.2 / JDK 17 and SHA-256-verified Android command-line tools
 12.0 to install platform/build-tools 34.0.0. SDK licenses are accepted on this
@@ -240,6 +259,11 @@ OpenRouteService API key. Saving a key enables route requests for accepted asks.
 Blank key preserves existing key; Remove stored API key pauses route computation.
 Key is not shipped with app. Clear application data to remove local incident data
 and configuration; no backup/export is enabled.
+
+Standalone plugin activity permits screenshots, including routing setup; API-key
+input remains masked. Screenshots may expose incident details and coordinates.
+Hosted TAK-CAD pages use the WearTAK host window's screenshot policy. This plugin
+does not override host, work-profile, or device-management capture restrictions.
 
 Routing sends current responder coordinates and incident destination to
 `https://api.openrouteservice.org/v2/directions/driving-car`.

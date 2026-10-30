@@ -1,3 +1,10 @@
+include:
+  - project: devsecops/gitlab-ci-common
+    ref: master
+    file: /template/artifactory_token_service.yml
+
+before_script: []
+
 workflow:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
@@ -15,6 +22,12 @@ variables:
   WEARTAK_SDK_SOURCE: "$CI_PROJECT_DIR/.ci-sdk"
   WEARTAK_PLUGIN_SDK_AAR: "$CI_PROJECT_DIR/.ci-sdk/build/outputs/aar/weartak-plugin-sdk-debug.aar"
 
+.artifactory_credentials:
+  extends: .artifactory_service_create_token_bash
+  before_script:
+    - !reference [.artifactory_service_create_token_bash, before_script]
+    - export ARTIFACTORY_USER="$GITLAB_USER_EMAIL" ARTIFACTORY_PASSWORD="$CI_JOB_ARTIFACTORY_TOKEN"
+
 release-checklist-tests:
   stage: verify
   image: node:22-bookworm-slim@sha256:4b150b48b4116e2a22f2c39cc27025fbf4f153e2078fd3b14d159fdb5c7279da
@@ -24,11 +37,13 @@ release-checklist-tests:
     - node --test ci/release-testing/create_checklist.test.cjs
 
 forge-verify:
+  extends: .artifactory_credentials
   stage: verify
   image: gradle:8.10.2-jdk17@sha256:c2900027f3f0681c2cbfb09d527813851ad67aeafbb409997297efa2df20e748
   timeout: 45m
   interruptible: true
   before_script:
+    - !reference [.artifactory_credentials, before_script]
     - apt-get update -qq
     - apt-get install -y --no-install-recommends python3 git ca-certificates
     - |
@@ -56,6 +71,7 @@ forge-verify:
         echo "Protected WearTAK production signing configuration verified."
       fi
   script:
+    - python3 ci/check_repository_credentials.py
     - python3 -m unittest discover -s ci -p "test_*.py" -v
     - python3 ci/setup_android.py
     - python3 ci/fetch_sdk.py --directory "$WEARTAK_SDK_SOURCE" --checkout-only

@@ -9,7 +9,6 @@ import android.os.Looper
 import android.text.InputFilter
 import android.text.InputType
 import android.view.View
-import android.view.WindowManager
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -36,7 +35,6 @@ class ResponderActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         selected = savedInstanceState?.getString("selected")
         step = savedInstanceState?.getInt("step") ?: 0
         render()
