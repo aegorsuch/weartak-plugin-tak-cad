@@ -6,6 +6,49 @@ Source only: no vendor SDK, wrapper JAR, APK, certificate, or signing material.
 
 ## Implemented
 
+- Main screen lists incidents, with this responder's requested or responding
+  incidents first, then other active incidents. Canonical matching uses the
+  host callsign or the configured vehicle UID, not the CoT UID. Requested
+  callsigns/vehicle IDs do not distinguish an ask from a mandatory task; the
+  UI labels both **Requested**. Current vehicle responses in `IN_ROUTE` or
+  `ON_SCENE` count as responding. Completed/cancelled canonical incidents are
+  retained locally but excluded from the active list.
+- Tapping a row opens expanded, paged canonical details: name/status/type,
+  narrative, available coordinates, requested callsigns/vehicle IDs, responding
+  vehicles/callsigns/status/ETAs, responding personnel UIDs/arrival times, and notes newest first. Missing coordinates
+  remain missing, never synthesized as `(0,0)`.
+- Canonical incident JSON is parsed from `__takCadIncidentDetails` inside the
+  CoT detail subtree without assuming an event `type` or `how`. `parseList`
+  accepts the bare incident array expected by the ATAK `getIncidents` client.
+- Optional Host Services SDK 1.0.0/protocol 1 enables **read-only CAD refresh**
+  through the connected host's authenticated HTTPS bridge. Fetch on start,
+  every five seconds while running, or with **Refresh incidents**. One connected
+  server is selected automatically; multiple require an explicit **Server**
+  selection. Disconnected/other-server snapshots and unscoped canonical CoT
+  records are hidden when using this extension, rather than mixed across servers. A complete valid
+  response atomically replaces canonical records, preserving legacy records;
+  failed HTTP/transport/parse/storage operations retain the cache and show errors.
+  Returned HTTP status is checked even when the bridge reports `ok`.
+- Expanded canonical detail has **Bloodhound** and **Target** actions when
+  coordinates exist. The plugin sends the actual coordinates and incident
+  UID/label to supported host actions on its worker thread. Bloodhound success
+  means activation requested, not arrival or route completion. Existing ACTION
+  presentation is functional text: the host extension adds no per-action icon
+  renderer. Older hosts disable these controls and show an update-required status.
+- Canonical response/notes writes remain unsupported; no server write is made.
+  Canonical incidents never emit legacy response CoT. Existing host forwarding
+  must explicitly include the canonical detail element; legacy `how` filtering
+  alone will not deliver it. No operational compatibility is claimed.
+- Canonical logo is copied unchanged from ATAK at `9a2a7ca5`; source path,
+  immutable revision, SHA-256, and user-stated reuse permission are in `NOTICE`.
+  Application icon supplies both package/launcher discovery and host Plugins
+  menu discovery. No change to host toggle behavior is included.
+- Explanatory integration/unsupported-feature banners, manual-guidance advice,
+  routing-setup disclosure prose and blank-key hint have been removed from UI.
+  Labels, incident data, actionable errors/status, delivery uncertainty, and
+  routing/data attribution remain. Routing transfer/privacy and setup behavior
+  are documented below.
+
 - Parse upstream incident asks; require explicit acceptance. Local decline does
   not invent a network rejection message.
 - Persist incident title, summary, coordinates, participation, own route/version,
@@ -33,16 +76,20 @@ Source only: no vendor SDK, wrapper JAR, APK, certificate, or signing material.
 
 Requires JDK 17, Android SDK platform 34, Gradle 8.10.2, and the WearTAK plugin SDK
 matching the host, including `MainUiActionContract` and `MainUiCardTypes.ACTION`.
-For local development, SDK is supplied as an external AAR, never checked in.
+Also requires the additive Host Services SDK 1.0.0/protocol 1 AAR, package
+`com.weartak.plugin.sdk.host.v1`. The lifecycle SDK/API version is unchanged.
+For local development, both SDKs are supplied as external AARs, never checked in.
 Example PowerShell, with machine-specific paths supplied by operator:
 
 ```powershell
 $env:ANDROID_HOME = '<Android SDK directory>'
 $env:WEARTAK_PLUGIN_SDK_AAR = '<absolute SDK AAR path>'
+$env:WEARTAK_HOST_SERVICES_SDK_AAR = '<absolute Host Services SDK AAR path>'
 gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
 ```
 
-Alternatively pass `-PweartakSdkAar=<absolute path>`. Use the release SDK artifact
+Alternatively pass `-PweartakSdkAar=<absolute path>` and
+`-PweartakHostServicesAar=<absolute path>`. Use the release SDK artifacts
 for production builds and separately configured authorized signing. No template
 signing scripts or keys are used. Android's generated debug signing key is not
 sufficient for a host signed with a different certificate: service requires
@@ -53,7 +100,10 @@ version ordering, persistent state, local decline, acceptance/refresh, offline
 and stale GPS, dispatch failure, stop-during-routing, launcher/setup, and binder
 initialization/host validation, hosted schema/actions, Unicode paging, navigation,
 and callback refresh. Tests use synthetic incident data and fake host control,
-with no network or routing account.
+with no network or routing account. Host-services tests cover protocol discovery,
+worker-only bridge calls, exact GET path/query, multi-server selection, disconnect,
+stop/rebind during fetch, source isolation, HTTP failures, malformed/oversize
+responses, atomic snapshots, and map-action failures without mutation replay.
 
 ## GitHub CI and release automation
 
@@ -223,6 +273,8 @@ No private content-binding keys, route payloads, or credentials are invented.
 |---|---|
 | `takcad.incident.open` | `incidentId` |
 | `takcad.incidents.previous`, `takcad.incidents.next`, `takcad.back` | none |
+| `takcad.incidents.refresh`, `takcad.server.next` | none |
+| `takcad.bloodhound`, `takcad.target` | selected `incidentId` |
 | `takcad.incident.accept`, `takcad.incident.decline`, `takcad.refresh` | selected `incidentId` |
 | `takcad.details.previous`, `takcad.details.next` | selected `incidentId` |
 | `takcad.route.previous`, `takcad.route.next` | selected `incidentId` |
@@ -235,6 +287,26 @@ bridge `takcad.receive` remains host-transport-only, never rendered as an action
 Schema/state contain no ORS key; hosted secure token/UID setup is **unavailable**
 until SDK/host supply a reviewed secret-input/provisioning contract. Development
 fallback is not claimed to satisfy that missing in-menu configuration feature.
+
+### Optional Host Services extension
+
+Discover `HostServicesContract.fromHostExtras(init.hostExtras)` during validated
+initialization; `null` means an older host. All synchronous extension methods run
+on the responder worker. Calls are scoped to that initialization; stop/rebind
+generation checks discard stale responses before persistence or success reporting.
+Refresh capabilities before server fetches/map actions. No CAD vehicle identity
+is supplied by the host: use the configured vehicle UID or exact callsign match
+for involvement; never infer a vehicle UID from the watch UID/callsign.
+
+Read endpoint is exactly
+`GET /Marti/api/plugins/tak.server.plugins.TakCadServerPlugin/submit?fn=getIncidents`.
+The host selects connected-server HTTPS port 8443, retains its client identity
+and trust, validates hostnames strictly, refuses redirects/transport retries, and
+bounds decompressed responses to 64 KiB. No server API is contacted by tests.
+Credentials/certificates are never returned to or stored by the plugin.
+Map actions require actual incident coordinates rather than assuming an incident
+UID already exists in the host map. No endpoint, CoT producer type/how, tasking
+operation, or vehicle identity is invented.
 
 Host also must implement `requestCotDispatch(CotRequestParcel("cot_xml", ...))`,
 `isCotConnected`, `getDeviceStatus`, and normal plugin lifecycle. Device telemetry
@@ -289,16 +361,31 @@ Evidence pinned to
 
 These are source files beneath
 `tak-cad-atak/app/src/main/java/com/atakmap/android/takcad/`.
-No upstream source exposes targeted **task assignments**, incident-type enum,
-shared-note create/update stream, or location-specific historical query. Those
-features are **not implemented** rather than assigned invented CoT types or REST
-endpoints. Summary can contain dispatcher narrative, but is not presented as
-structured incident type, shared notes, or verified location history.
+That older public prototype does not expose targeted task assignments,
+structured incident types, notes APIs, or location-history queries. Its summary
+is not treated as structured canonical data.
 
-To complete requested workflow, WinTAK/backend owners must provide authenticated
+The newer canonical ATAK client is separately pinned to
+[`Raytheon/tak-cad-atak@9a2a7ca5`](https://git.tak.gov/Raytheon/tak-cad-atak/-/tree/9a2a7ca53128de56a056a0e891dae05f09f78113).
+Evidence: `cot/IncidentDetailHandler.java`, `dto/Incident.java`,
+`dto/Vehicle.java`, `dto/VehicleResponse.java`, `dto/Note.java`,
+`rest/TakCadPluginService.java`, and `scheduling/CadTaskManager.java`.
+It consumes canonical incident JSON, uses selected-server mutual TLS on port
+8443 by default, reads `getIncidents`/`getIncident`, writes vehicle responses and
+notes through `Marti/api/plugins/tak.server.plugins.TakCadServerPlugin/submit`,
+and polls incident data every five seconds. The optional host bridge now wires
+`getIncidents` reads and host map actions only. It does not import server
+private keys or disable TLS hostname verification.
+
+The server repository is inaccessible with current source-read authorization.
+Deployed CAD server version, full producer CoT envelope and recipient routing,
+mandatory-task semantics, location-history retrieval, and live payload fixtures
+remain unverified. Tests use synthetic client-shaped data, not captured traffic.
+
+To complete requested workflow, host/SDK and WinTAK/backend owners must provide authenticated
 recipient/task semantics, task acceptance/mandatory assignment behavior, membership
 and closure acknowledgements, stable note IDs/order/conflict policy, real-time note
-events, incident type schema, and authorized location-history retrieval. Incoming
+events and authorized location-history retrieval. Incoming
 CoT must be authenticated and appropriately routed by host: legacy payloads have
 no per-responder recipient or authorization signature. This app cannot prove who
 authored a received event beyond its trusted host transport.

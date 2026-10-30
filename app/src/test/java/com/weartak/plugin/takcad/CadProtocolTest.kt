@@ -11,8 +11,9 @@ import org.robolectric.annotation.Config
 internal const val ROUTE = """{"features":[{"properties":{"summary":{"duration":125.5},"segments":[{"steps":[{"instruction":"Turn right"},{"instruction":"Arrive"}]}]}}]}"""
 internal val ASK = CadEvent.Ask("incident-1", "Medical & rescue", "Entrance <north>", Position(41.8, -87.6))
 internal fun askXml(ask: CadEvent.Ask = ASK): String {
+    val position = requireNotNull(ask.position)
     val json = JSONObject().put("incident_id", ask.id).put("title", ask.title).put("summary", ask.summary)
-        .put("latitude", ask.position.latitude.toString()).put("longitude", ask.position.longitude.toString())
+        .put("latitude", position.latitude.toString()).put("longitude", position.longitude.toString())
     return """<event how="tak-cad-incident" uid="dispatch"><detail><detail>${android.text.TextUtils.htmlEncode(json.toString())}</detail></detail></event>"""
 }
 
@@ -36,7 +37,7 @@ class CadProtocolTest {
     }
 
     @Test fun routeUpdateHasNoIncidentReplacementMetadata() {
-        val response = CadProtocol.parse(CadProtocol.response(ASK, "watch", "Unit", 2, Route.parse(ROUTE), 1_000, ASK.position)) as CadEvent.Response
+        val response = CadProtocol.parse(CadProtocol.response(ASK, "watch", "Unit", 2, Route.parse(ROUTE), 1_000, requireNotNull(ASK.position))) as CadEvent.Response
         assertNull(response.incident)
         assertEquals(2, response.version)
     }
