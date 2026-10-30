@@ -14,9 +14,9 @@ pluginManagement {
                     username = takUser
                     password = takPass
                 }
-                println("takArtifactory for plugins: ${if (takUser != null && takPass != null) "enabled" else "disabled (no credentials in environment)"}")
             }
         }
+        println("takArtifactory for plugins: ${if (takUser != null && takPass != null) "enabled" else "disabled (no credentials in environment)"}")
         google()
         mavenCentral()
         gradlePluginPortal()
