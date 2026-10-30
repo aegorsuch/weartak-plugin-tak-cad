@@ -7,6 +7,10 @@ val sdkAar = providers.gradleProperty("weartakSdkAar")
     .orElse(providers.environmentVariable("WEARTAK_PLUGIN_SDK_AAR"))
     .orNull ?: error("Set -PweartakSdkAar=<local WearTAK plugin SDK AAR>; vendor binaries are not stored here.")
 require(file(sdkAar).isFile) { "WearTAK plugin SDK AAR does not exist: $sdkAar" }
+val hostServicesAar = providers.gradleProperty("weartakHostServicesAar")
+    .orElse(providers.environmentVariable("WEARTAK_HOST_SERVICES_SDK_AAR"))
+    .orNull ?: error("Set -PweartakHostServicesAar=<WearTAK Host Services SDK 1.0.0 AAR>.")
+require(file(hostServicesAar).isFile) { "WearTAK Host Services SDK AAR does not exist: $hostServicesAar" }
 
 android {
     namespace = "com.weartak.plugin.takcad"
@@ -43,6 +47,7 @@ apply(from = rootProject.file("gradle/weartak-sideload-production.gradle"))
 
 dependencies {
     implementation(files(sdkAar))
+    implementation(files(hostServicesAar))
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.13")
 }

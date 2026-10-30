@@ -14,8 +14,8 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
-import java.util.Locale
 import kotlin.math.ceil
+import com.weartak.plugin.sdk.host.v1.HostServicesContract as C
 
 class ResponderActivity : Activity() {
     private val runtime get() = (application as CadApplication).runtime
@@ -75,18 +75,25 @@ class ResponderActivity : Activity() {
         surface()
         text(getString(R.string.app_name), 22f)
         text(runtime.lastError ?: runtime.message)
-        val incidents = runtime.store.snapshot()
+        val incidents = runtime.visibleIncidents()
         if (selected == null) {
+            text(runtime.selectedServerName() ?: "CAD server")
+            text(runtime.lastError ?: runtime.cadStatus)
+            button("Refresh incidents", runtime.isRunning() && runtime.supportsCad()) { runtime.refreshIncidents() }
+            runtime.nextServerName()?.let { name ->
+                button("Server: $name", runtime.canSelectServer()) { runtime.nextServer() }
+            }
             if (incidents.isEmpty()) text(getString(R.string.empty))
             for (incident in incidents) {
-                button("${incident.ask.title}\n${stateLabel(incident.participation)}") {
+                val state = listOfNotNull(runtime.involvement(incident),
+                    incident.ask.canonical?.status ?: stateLabel(incident.participation)).distinct().joinToString(" | ")
+                button("${incident.ask.title}\n$state") {
                     selected = incident.ask.id
                     step = 0
                     routeJson = null
                     render()
                 }
             }
-            text(getString(R.string.unsupported))
             button(getString(R.string.configuration)) { setup() }
             return
         }
@@ -96,11 +103,15 @@ class ResponderActivity : Activity() {
             render()
             return
         }
-        text(incident.ask.title, 20f)
-        text(stateLabel(incident.participation))
-        text(incident.ask.summary)
-        text(String.format(Locale.getDefault(), "%.5f, %.5f", incident.ask.position.latitude, incident.ask.position.longitude))
-        if (incident.participation == Participation.ASKED) {
+        text(incident.detailText(), 20f)
+        if (incident.ask.canonical == null) text(stateLabel(incident.participation))
+        if (incident.ask.canonical != null && incident.ask.position != null) {
+            button("Bloodhound", runtime.canMapAction(C.ACTION_BLOODHOUND)) {
+                runtime.mapAction(incident.ask.id, C.ACTION_BLOODHOUND)
+            }
+            button("Target", runtime.canMapAction(C.ACTION_TARGET)) { runtime.mapAction(incident.ask.id, C.ACTION_TARGET) }
+        }
+        if (incident.ask.canonical == null && incident.participation == Participation.ASKED) {
             button(getString(R.string.accept)) { runtime.accept(incident.ask.id) }
             button(getString(R.string.decline)) { runtime.decline(incident.ask.id) }
         }
@@ -114,32 +125,31 @@ class ResponderActivity : Activity() {
             text("${step + 1}/${route.steps.size}\n${route.steps[step]}", 20f)
             button(getString(R.string.previous), step > 0) { step--; render() }
             button(getString(R.string.next), step < route.steps.lastIndex) { step++; render() }
-            text(getString(R.string.guidance_notice))
             text(getString(R.string.route_attribution), 12f)
-        } else text(getString(R.string.route_unavailable))
+        } else if (incident.ask.canonical == null) text(getString(R.string.route_unavailable))
         if (incident.participation == Participation.RESPONSE_QUEUED) {
             button(getString(R.string.refresh_route)) { runtime.refresh(incident.ask.id) }
         }
-        text(getString(R.string.responders), 20f)
-        if (incident.responders.isEmpty()) text(getString(R.string.no_responders))
-        incident.responders.values.sortedBy { it.route.seconds }.forEach {
-            text(getString(R.string.estimate, it.callsign, ceil(it.route.seconds / 60).toInt(),
-                age(it.receivedAt), if (age(it.receivedAt) > 90) getString(R.string.stale) else ""))
+        if (incident.ask.canonical == null) {
+            text(getString(R.string.responders), 20f)
+            if (incident.responders.isEmpty()) text(getString(R.string.no_responders))
+            incident.responders.values.sortedBy { it.route.seconds }.forEach {
+                text(getString(R.string.estimate, it.callsign, ceil(it.route.seconds / 60).toInt(),
+                    age(it.receivedAt), if (age(it.receivedAt) > 90) getString(R.string.stale) else ""))
+            }
         }
-        text(getString(R.string.unsupported))
     }
 
     private fun setup() {
         configuring = true
         surface()
         text(getString(R.string.configuration), 22f)
-        text(getString(R.string.routing_disclosure))
         val uid = input(getString(R.string.responder_uid), runtime.responderUid(), false, 256)
+        val vehicle = input(getString(R.string.vehicle_uid), runtime.responderVehicleUid(), false, 256)
         text(getString(if (runtime.keyConfigured()) R.string.key_saved else R.string.key_missing))
         val key = input(getString(R.string.ors_key), "", true, 4096)
-        text(getString(R.string.key_hint))
         button(getString(R.string.save)) {
-            runtime.configure(uid.text.toString().trim(), key.text.toString().trim())
+            runtime.configure(uid.text.toString().trim(), key.text.toString().trim(), vehicle.text.toString().trim())
             key.text.clear()
             configuring = false
             render()

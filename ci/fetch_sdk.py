@@ -34,7 +34,7 @@ def git_environment(token):
     return environment
 
 
-def checkout_sdk(directory, revision, token):
+def checkout_sdk(directory, revision, token, repository=SDK_REPOSITORY):
     validate_revision(revision)
     environment = git_environment(token)
     directory.mkdir(parents=True, exist_ok=False)
@@ -50,7 +50,7 @@ def checkout_sdk(directory, revision, token):
         return completed.stdout.strip()
 
     git("init", "--quiet")
-    git("remote", "add", "origin", SDK_REPOSITORY)
+    git("remote", "add", "origin", repository)
     git("fetch", "--quiet", "--depth=1", "origin", revision)
     git("checkout", "--quiet", "--detach", "FETCH_HEAD")
     if git("rev-parse", "HEAD").lower() != revision.lower():

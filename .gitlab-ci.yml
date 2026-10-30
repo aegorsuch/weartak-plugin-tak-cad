@@ -21,6 +21,8 @@ variables:
   GRADLE_USER_HOME: "$CI_PROJECT_DIR/.gradle"
   WEARTAK_SDK_SOURCE: "$CI_PROJECT_DIR/.ci-sdk"
   WEARTAK_PLUGIN_SDK_AAR: "$CI_PROJECT_DIR/.ci-sdk/build/outputs/aar/weartak-plugin-sdk-debug.aar"
+  WEARTAK_HOST_SDK_SOURCE: "$CI_PROJECT_DIR/.ci-host-sdk"
+  WEARTAK_HOST_SERVICES_SDK_AAR: "$CI_PROJECT_DIR/.ci-host-sdk/weartak-plugin-host-services-sdk/build/outputs/aar/weartak-plugin-host-services-sdk-release.aar"
 
 .artifactory_credentials:
   extends: .artifactory_service_create_token_bash
@@ -77,6 +79,9 @@ forge-verify:
     - python3 ci/fetch_sdk.py --directory "$WEARTAK_SDK_SOURCE" --checkout-only
     - gradle --no-daemon --console=plain -p "$WEARTAK_SDK_SOURCE" testDebugUnitTest testReleaseUnitTest assembleDebug assembleRelease
     - test -f "$WEARTAK_PLUGIN_SDK_AAR"
+    - python3 ci/fetch_host_sdk.py --directory "$WEARTAK_HOST_SDK_SOURCE" --checkout-only
+    - bash "$WEARTAK_HOST_SDK_SOURCE/gradlew" --no-daemon --console=plain -p "$WEARTAK_HOST_SDK_SOURCE/weartak-plugin-host-services-sdk" assembleRelease
+    - test -f "$WEARTAK_HOST_SERVICES_SDK_AAR"
     - gradle --no-daemon --console=plain :app:testDebugUnitTest :app:testReleaseUnitTest :app:assembleDebug :app:assembleRelease :app:lintDebug :app:lintRelease
     - |
       if [ "${CI_COMMIT_BRANCH:-}" = "${CI_DEFAULT_BRANCH:-}" ] \

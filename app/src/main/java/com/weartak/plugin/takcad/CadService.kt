@@ -19,6 +19,7 @@ import com.weartak.plugin.sdk.v3.aidl.IWearTakPluginHostControlV3
 import com.weartak.plugin.sdk.validation.ContractValidationResult
 import com.weartak.plugin.sdk.validation.PluginMetadataValidator
 import com.weartak.plugin.sdk.validation.SettingsApplyValidator
+import com.weartak.plugin.sdk.host.v1.HostServicesContract
 
 class CadService : Service() {
     private val lifecycle = PluginLifecycleMachine()
@@ -40,7 +41,7 @@ class CadService : Service() {
     private val binder = object : IWearTakPlugin.Stub() {
         override fun getPluginInfo() = PluginInfoParcel(
             BuildConfig.APPLICATION_ID, getString(R.string.app_name), BuildConfig.VERSION_NAME, BuildConfig.APPLICATION_ID,
-            "Responder incident asks, routing and ETAs. Incoming CoT requires host bridge.",
+            "Incidents",
         )
         override fun getApiVersion() = WearTakPluginContract.CONTRACT_API_VERSION
         override fun getCapabilities() = PluginCapabilitiesParcel(
@@ -72,7 +73,7 @@ class CadService : Service() {
             require(validation is ContractValidationResult.Ok) { "Host/plugin metadata mismatch" }
             transition(PluginLifecycleEvent.INITIALIZED)
             hostUid = init.hostUid
-            runtime.attach(control)
+            runtime.attach(control, HostServicesContract.fromHostExtras(init.hostExtras)?.let(::CadHostServices))
         }
 
         override fun startPlugin() {
@@ -111,7 +112,7 @@ class CadService : Service() {
         }
 
         override fun onHostSettingsChanged(settings: HostSettingsParcel?) { requireHost() }
-        override fun getSettingsSchema() = SettingsSchemaParcel(title = "Hosted routing setup requires secure input support")
+        override fun getSettingsSchema() = SettingsSchemaParcel(title = "Routing setup")
         override fun getSettingsValues() = Bundle()
         override fun applySettings(values: Bundle?) { applySettingsWithResult(values, SettingsApplyMode.PARTIAL_PATCH) }
         override fun applySettingsWithResult(values: Bundle?, mode: Int): SettingsApplyResultParcel {
@@ -123,12 +124,13 @@ class CadService : Service() {
 
         override fun getMainUiState() = Bundle().apply {
             putString("last_message", runtime.lastError ?: runtime.message)
-            putString("kv_row1_label", "Incident asks")
-            putString("kv_row1_value", runtime.store.snapshot().count { it.participation == Participation.ASKED }.toString())
-            putString("kv_row2_label", "Incoming CoT bridge")
-            putString("kv_row2_value", if (runtime.bridgeSeen) "Observed" else "Not observed; host forwarding required")
+            putString("kv_row1_label", "Incidents")
+            putString("kv_row1_value", runtime.visibleIncidents().size.toString())
+            putString("kv_row2_label", if (runtime.supportsCad()) "CAD server" else "Incoming CoT bridge")
+            putString("kv_row2_value", if (runtime.supportsCad()) runtime.cadStatus
+                else if (runtime.bridgeSeen) "Connected" else "Awaiting host")
             putString("kv_row3_label", "Response delivery")
-            putString("kv_row3_value", "Host queue only; no dispatcher acknowledgement")
+            putString("kv_row3_value", "Unconfirmed")
         }
 
         override fun invokeMainUiAction(actionId: String?, args: Bundle?) {
