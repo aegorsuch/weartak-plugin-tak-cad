@@ -3,6 +3,7 @@ package com.weartak.plugin.takcad
 
 import android.content.Intent
 import android.os.Bundle
+import android.view.WindowManager
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -27,12 +28,15 @@ class ResponderUiTest {
         val controller = Robolectric.buildActivity(ResponderActivity::class.java).setup()
         try {
             val activity = controller.get()
+            assertEquals("TAK CAD", activity.getString(R.string.app_name))
+            assertEquals(0, activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE)
             val root = activity.findViewById<android.view.ViewGroup>(android.R.id.content)
             val scroll = root.getChildAt(0) as ScrollView
             val content = scroll.getChildAt(0) as LinearLayout
             val children = (0 until content.childCount).map { content.getChildAt(it) }
             assertTrue(children.filterIsInstance<TextView>().any { it.text.contains("No incident asks") })
             children.filterIsInstance<Button>().single { it.text == activity.getString(R.string.configuration) }.performClick()
+            assertEquals(0, activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE)
             val setup = (root.getChildAt(0) as ScrollView).getChildAt(0) as LinearLayout
             assertTrue((0 until setup.childCount).map { setup.getChildAt(it) }.filterIsInstance<TextView>()
                 .any { it.text.contains("OpenRouteService") })
@@ -50,6 +54,7 @@ class ResponderUiTest {
             assertNull(service.onBind(Intent("unrelated.action")))
             val binder = IWearTakPlugin.Stub.asInterface(service.onBind(Intent("com.weartak.plugin.action.PLUGIN_SERVICE")))
             assertEquals(BuildConfig.APPLICATION_ID, binder.pluginInfo.pluginId)
+            assertEquals("TAK CAD", binder.pluginInfo.displayName)
             assertFalse(binder.capabilities.cotReadyEvents)
             assertTrue(binder.capabilities.hostedMainUi)
             assertFalse(binder.capabilities.externalMainActivity)

@@ -44,6 +44,9 @@ class HostedResponderUiTest {
     @Test fun listAndDetailsUseExactActionContractWithoutSecrets() {
         runtime.store.receive(ASK, 1)
         val schema = ui.schema()
+        val status = schema.cards.single { it.cardId == "status" }
+        assertEquals("TAK CAD", status.title)
+        assertEquals(runtime.lastError ?: runtime.message, status.subtitle)
         assertTrue(MainUiSchemaContractValidator.validate(schema, strictV1CardTypesOnly = true) is ContractValidationResult.Ok)
         val open = schema.cards.single { it.cardId == "takcad.incident.open" }
         assertEquals("ACTION", open.cardType)

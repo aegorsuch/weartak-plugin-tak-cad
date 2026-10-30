@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">TAK-CAD</string>
+    <string name="app_name">TAK CAD</string>
     <string name="empty">No incident asks. Enable plugin in WearTAK. Incoming CoT forwarding requires host integration; see README.</string>
     <string name="accept">Accept ask</string>
     <string name="decline">Decline locally</string>

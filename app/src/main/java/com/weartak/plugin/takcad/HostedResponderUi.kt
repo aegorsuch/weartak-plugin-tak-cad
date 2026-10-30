@@ -26,7 +26,7 @@ class HostedResponderUi(private val runtime: CadRuntime) {
             cards += MainUiCardParcel(MainUiCardTypes.ACTION, id, label,
                 content = MainUiActionContract.createContent(id, label, enabled, args))
         }
-        status("status", "TAK-CAD", runtime.lastError ?: runtime.message)
+        status("status", "TAK CAD", runtime.lastError ?: runtime.message)
         val incident = view.incident
         if (incident == null) {
             if (view.incidents.isEmpty()) {

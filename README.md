@@ -241,6 +241,11 @@ Blank key preserves existing key; Remove stored API key pauses route computation
 Key is not shipped with app. Clear application data to remove local incident data
 and configuration; no backup/export is enabled.
 
+Standalone plugin activity permits screenshots, including routing setup; API-key
+input remains masked. Screenshots may expose incident details and coordinates.
+Hosted TAK-CAD pages use the WearTAK host window's screenshot policy. This plugin
+does not override host, work-profile, or device-management capture restrictions.
+
 Routing sends current responder coordinates and incident destination to
 `https://api.openrouteservice.org/v2/directions/driving-car`.
 Upstream documents this provider; deployment must authorize that data transfer,

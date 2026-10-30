@@ -39,7 +39,7 @@ class CadService : Service() {
 
     private val binder = object : IWearTakPlugin.Stub() {
         override fun getPluginInfo() = PluginInfoParcel(
-            BuildConfig.APPLICATION_ID, "TAK-CAD", BuildConfig.VERSION_NAME, BuildConfig.APPLICATION_ID,
+            BuildConfig.APPLICATION_ID, getString(R.string.app_name), BuildConfig.VERSION_NAME, BuildConfig.APPLICATION_ID,
             "Responder incident asks, routing and ETAs. Incoming CoT requires host bridge.",
         )
         override fun getApiVersion() = WearTakPluginContract.CONTRACT_API_VERSION
