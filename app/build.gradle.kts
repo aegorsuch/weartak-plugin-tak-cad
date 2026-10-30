@@ -19,8 +19,22 @@ android {
         applicationId = "com.weartak.plugin.takcad"
         minSdk = 30
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1.0"
+        val baseVersionCode = 584
+        val baseVersionName = "5.8.4"
+        val pipeline = System.getenv("CI_PIPELINE_IID")
+        if (pipeline != null) {
+            val iid = pipeline.toIntOrNull()
+                ?: throw GradleException("CI_PIPELINE_IID must be an integer.")
+            if (iid !in 0..9999) {
+                throw GradleException("CI_PIPELINE_IID $iid exceeds the versionCode pipeline range (0-9999).")
+            }
+            val sha = System.getenv("CI_COMMIT_SHORT_SHA") ?: "local"
+            versionCode = baseVersionCode * 10000 + iid
+            versionName = "$baseVersionName-p$iid+$sha"
+        } else {
+            versionCode = baseVersionCode
+            versionName = baseVersionName
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
