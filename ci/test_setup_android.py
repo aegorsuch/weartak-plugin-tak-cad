@@ -37,7 +37,7 @@ class AndroidSetupTest(unittest.TestCase):
             ])
             self.assertEqual(run.call_args.args[0], [
                 str(sdkmanager), f"--sdk_root={directory}",
-                "platforms;android-34", "build-tools;34.0.0", "platform-tools",
+                "platforms;android-34", "platforms;android-35", "build-tools;34.0.0", "platform-tools",
             ])
             self.assertTrue(all(call.kwargs["check"] for call in run.call_args_list))
 

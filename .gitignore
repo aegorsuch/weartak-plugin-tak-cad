@@ -19,4 +19,5 @@ local.properties
 __pycache__/
 .ci-tools/
 .ci-sdk/
+.ci-host-sdk/
 signing.properties

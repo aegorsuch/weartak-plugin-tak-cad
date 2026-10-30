@@ -137,6 +137,19 @@ initialization delegates to the same validated v2 initializer, without advertisi
 unsupported audio capabilities. Local validation uses the owner's compatible AAR
 outside this repository. No host/template SDK artifact is overwritten here.
 
+The additive Host Services SDK is provisioned separately by `ci/fetch_host_sdk.py`
+from the approved personal public source mirror
+`https://github.com/aegorsuch/weartak-wearos.git`, at a full reviewed immutable
+commit `782d8a7e791dd70750d567e22115b739332c04ba` (Host Services SDK 1.0.0).
+`WEARTAK_HOST_SDK_REVISION` can override that pin with another full reviewed
+40-character commit. No Forge credential or company-mirror access is required.
+CI installs Android platform 35 for this standalone library, then runs the pinned
+host repository's Gradle wrapper with
+`--no-daemon -p weartak-plugin-host-services-sdk assembleRelease`.
+Only the standalone SDK module is built, not the host application.
+The source checkout verifies HEAD and disables redirects; no moving branch,
+machine-local AAR, committed vendor binary, or credential fallback exists.
+
 Pushing a `v*` tag runs the same full checks before the release job can publish
 `TAK-CAD-debug-not-production-signed.apk` and `SHA256SUMS` as a **debug prerelease**.
 No production-signing secret is assumed. Generated debug certificate changes on
@@ -224,13 +237,18 @@ signatures, and debug builds cannot create this production artifact. Signing
 keystore/properties are removed before artifact upload; no APK or signing material
 is committed.
 
-**No Forge GitHub publisher or rolling release is enabled.** The APK is not
-published to GitHub. Any future publisher requires separate authorization and
-must target only personal
-`aegorsuch/weartak-plugin-tak-cad`, never a company repository, after SDK
-distribution rights review. No credentials, GitLab variables, protected refs,
-releases, or remote settings were created or changed here. Existing GitHub
-debug-prerelease/checklist automation above remains separate and unchanged.
+**No automatic Forge GitHub publisher or persistent remote mirror is enabled.**
+The user authorized scoped manual source mirroring and production APK publication
+to personal `aegorsuch/weartak-plugin-tak-cad`, never a company repository.
+Publication must wait for the protected-main Forge signature check, recheck that
+personal main is an ancestor of the exact canonical source SHA, and use only a
+normal fast-forward push. Divergence stops publication; no force overwrite.
+Publish the verified production APK and matching SHA256SUMS with that source SHA
+in release notes. Do not substitute a locally debug-signed APK.
+Existing authenticated operator tools are sufficient for this one-time flow;
+no new token, persistent access, GitLab variable, or mirror configuration is
+required. Ongoing automatic publication remains separate, unconfigured work.
+Existing GitHub debug-prerelease/checklist automation above remains unchanged.
 
 ## Required host integration
 
