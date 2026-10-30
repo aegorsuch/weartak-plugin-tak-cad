@@ -242,7 +242,12 @@ class CadRuntime(
         refreshIdentity()
         check(capabilities.takHttps) { "CAD HTTPS unavailable in WearTAK" }
         if (serverId == null) {
-            cadStatus = if (capabilities.servers.isEmpty()) "Connect a TAK server" else "Select CAD server"
+            synchronized(gate) {
+                checkCurrent(epoch)
+                check(services === hostServices) { "Host connection changed" }
+                cadStatus = if (capabilities.servers.isEmpty()) "Connect a TAK server" else "Select CAD server"
+                message = cadStatus
+            }
             return
         }
         val records = services.incidents(serverId)

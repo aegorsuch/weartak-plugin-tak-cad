@@ -126,8 +126,9 @@ class CadService : Service() {
             putString("last_message", runtime.lastError ?: runtime.message)
             putString("kv_row1_label", "Incidents")
             putString("kv_row1_value", runtime.visibleIncidents().size.toString())
-            putString("kv_row2_label", "Incoming CoT bridge")
-            putString("kv_row2_value", if (runtime.bridgeSeen) "Connected" else "Awaiting host")
+            putString("kv_row2_label", if (runtime.supportsCad()) "CAD server" else "Incoming CoT bridge")
+            putString("kv_row2_value", if (runtime.supportsCad()) runtime.cadStatus
+                else if (runtime.bridgeSeen) "Connected" else "Awaiting host")
             putString("kv_row3_label", "Response delivery")
             putString("kv_row3_value", "Unconfirmed")
         }

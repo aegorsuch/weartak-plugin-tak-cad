@@ -266,6 +266,7 @@ class CadHostServicesTest {
             runtime.awaitIdle()
             assertNull(runtime.lastError)
             assertEquals("Connect a TAK server", runtime.cadStatus)
+            assertEquals("Connect a TAK server", runtime.message)
             assertTrue(runtime.visibleIncidents().isEmpty())
             assertEquals(before, services.requests.size)
             assertEquals(1, runtime.store.snapshot().size)

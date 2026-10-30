@@ -119,6 +119,8 @@ class ResponderUiTest {
             runtime.awaitIdle()
             assertTrue(runtime.supportsCad())
             assertEquals("Connect a TAK server", runtime.cadStatus)
+            assertEquals("CAD server", binder.mainUiState.getString("kv_row2_label"))
+            assertEquals("Connect a TAK server", binder.mainUiState.getString("kv_row2_value"))
             assertTrue(calls.isNotEmpty())
             assertTrue(calls.all { it !== android.os.Looper.getMainLooper().thread })
             assertTrue(binder.mainUiSchema.cards.single { it.cardId == "takcad.incidents.refresh" }
