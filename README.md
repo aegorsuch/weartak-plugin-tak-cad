@@ -66,7 +66,7 @@ path or unverified binary fallback exists in CI.
 CI builds the public SDK source mirror:
 `https://github.com/aegorsuch/weartak-plugin-sdk.git`.
 Default SDK revision is exact published GitHub commit
-[`a4f784338efb1d8eb048591a4a3f57b3f7e8ffa3`](https://github.com/aegorsuch/weartak-plugin-sdk/commit/a4f784338efb1d8eb048591a4a3f57b3f7e8ffa3),
+[`e2ee52402cf5738e86e43c3f6f1ce1594bd6e5ec`](https://github.com/aegorsuch/weartak-plugin-sdk/commit/e2ee52402cf5738e86e43c3f6f1ce1594bd6e5ec),
 including compatible v3 and ACTION APIs, matching canonical
 [SDK merge request 2](https://git.tak.gov/weartak-plugins/weartak-plugin-sdk/-/merge_requests/2).
 Repository variable

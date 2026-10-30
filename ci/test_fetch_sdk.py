@@ -11,7 +11,7 @@ from fetch_sdk import DEFAULT_SDK_REVISION, SDK_REPOSITORY, checkout_sdk, git_en
 class SdkProvisioningTest(unittest.TestCase):
     def test_requires_full_immutable_revision(self):
         self.assertEqual(SDK_REPOSITORY, "https://github.com/aegorsuch/weartak-plugin-sdk.git")
-        self.assertEqual(DEFAULT_SDK_REVISION, "a4f784338efb1d8eb048591a4a3f57b3f7e8ffa3")
+        self.assertEqual(DEFAULT_SDK_REVISION, "e2ee52402cf5738e86e43c3f6f1ce1594bd6e5ec")
         validate_revision(DEFAULT_SDK_REVISION)
         validate_revision("a" * 40)
         for revision in ["", "main", "abc123", "a" * 39, "g" * 40, "-bad-option"]:
