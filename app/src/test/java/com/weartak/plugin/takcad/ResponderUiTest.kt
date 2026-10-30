@@ -38,7 +38,7 @@ class ResponderUiTest {
             val children = (0 until content.childCount).map { content.getChildAt(it) }
             assertTrue(children.filterIsInstance<TextView>().any { it.text == "No incidents" })
             assertFalse(children.filterIsInstance<TextView>().any { it.text.contains("protocol extension") })
-            assertEquals(R.drawable.ic_launcher, activity.applicationInfo.icon)
+            assertEquals(R.mipmap.ic_launcher, activity.applicationInfo.icon)
             assertNotNull(activity.getDrawable(activity.applicationInfo.icon))
             children.filterIsInstance<Button>().single { it.text == activity.getString(R.string.configuration) }.performClick()
             assertEquals(0, activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE)
@@ -61,6 +61,11 @@ class ResponderUiTest {
             assertNull(service.onBind(Intent("unrelated.action")))
             val binder = IWearTakPlugin.Stub.asInterface(service.onBind(Intent("com.weartak.plugin.action.PLUGIN_SERVICE")))
             assertEquals(BuildConfig.APPLICATION_ID, binder.pluginInfo.pluginId)
+            assertEquals(BuildConfig.APPLICATION_ID, binder.pluginInfo.packageName)
+            assertEquals(
+                R.mipmap.ic_launcher,
+                service.packageManager.getApplicationInfo(binder.pluginInfo.packageName, 0).icon,
+            )
             assertEquals("TAK CAD", binder.pluginInfo.displayName)
             assertFalse(binder.capabilities.cotReadyEvents)
             assertTrue(binder.capabilities.hostedMainUi)

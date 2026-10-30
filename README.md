@@ -44,10 +44,13 @@ rather than producing an invalid or silently downgraded CI version.
   Canonical incidents never emit legacy response CoT. Existing host forwarding
   must explicitly include the canonical detail element; legacy `how` filtering
   alone will not deliver it. No operational compatibility is claimed.
-- Canonical logo is copied unchanged from ATAK at `9a2a7ca5`; source path,
-  immutable revision, SHA-256, and user-stated reuse permission are in `NOTICE`.
-  Application icon supplies both package/launcher discovery and host Plugins
-  menu discovery. No change to host toggle behavior is included.
+- Official launcher/toolbar logo comes from the public ATAK plugin at
+  `9f60ae05`; source path, immutable revision, SHA-256, and user-stated reuse
+  permission are in `NOTICE`. Its black artwork sits on white for contrast
+  against WearTAK's dark menu. Five density variants provide a 108dp adaptive
+  foreground with a centered 76dp source image, plus 48dp legacy icons.
+  Launcher, round launcher, and host Plugins menu all resolve the package's
+  adaptive application icon. No host toggle behavior changes are included.
 - Explanatory integration/unsupported-feature banners, manual-guidance advice,
   routing-setup disclosure prose and blank-key hint have been removed from UI.
   Labels, incident data, actionable errors/status, delivery uncertainty, and

@@ -9,14 +9,18 @@ Upstream source license: GNU GPL version 3 or, at your option, any later version
 This source implementation is distributed under GPL-3.0-or-later.
 See LICENSE for the complete GNU General Public License version 3.
 No upstream binaries, certificates, or signing credentials are included.
-The canonical TAK CAD logo is included with permission stated by the user:
-Source: https://git.tak.gov/Raytheon/tak-cad-atak
-Revision: 9a2a7ca53128de56a056a0e891dae05f09f78113
-Path: app/src/main/res/drawable/ic_launcher.png
-Git blob: 4d42eab9473b35985581c6cb8816d3c6449abf60
-SHA-256: b04ba286a75512881868f01e313429fae1be8e4258ee545abe34343c3156cded
-The asset is copied byte-for-byte; no separate asset license grant was found in
-that repository. Its inclusion does not assert GPL licensing of the logo.
+The TAK CAD launcher/toolbar logo is included with permission stated by the user:
+Source: https://github.com/raytheonbbn/tak-cad
+Revision: 9f60ae056057b7496c65688e3f4acd86a398438f
+Path: tak-cad-atak/app/src/main/res/drawable-hdpi/ic_launcher.png
+Git blob: 602f791041c816cd0d8b952e41edc970cc655a44
+SHA-256: 5cbc2892273ef0ad84297101b6d6c6b8522e472876769cffa1cb00c8a49ecb4f
+TakCadTool.getIcon() uses this resource for the upstream toolbar.
+The original is retained byte-for-byte as drawable-nodpi/takcad_logo.png.
+Derived density assets resize/pad the original for Android adaptive and legacy
+icons; the adaptive icon adds a white background without altering the artwork.
+No separate asset license grant was found. User explicitly confirmed permission
+to reuse this logo; its inclusion does not assert GPL licensing of the logo.
 The separately supplied WearTAK plugin SDK and build dependencies
 retain their respective licenses. Verify their distribution terms before shipping.
 
