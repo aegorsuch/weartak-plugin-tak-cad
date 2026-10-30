@@ -56,6 +56,7 @@ forge-verify:
         echo "Protected WearTAK production signing configuration verified."
       fi
   script:
+    - python3 ci/check_repository_credentials.py
     - python3 -m unittest discover -s ci -p "test_*.py" -v
     - python3 ci/setup_android.py
     - python3 ci/fetch_sdk.py --directory "$WEARTAK_SDK_SOURCE" --checkout-only

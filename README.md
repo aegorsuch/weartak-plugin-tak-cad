@@ -115,7 +115,20 @@ branch pushes, tags, and manual pipelines; push pipelines are suppressed when an
 open merge request already provides coverage. Requires a Linux Docker-compatible
 runner with outbound access to Google Android downloads/Maven, Gradle/Maven
 repositories, Docker Hub, and the public personal SDK mirror on GitHub.
-No Forge variables or credentials are required for the public SDK.
+SDK source checkout remains public. Forge dependency resolution requires the
+existing read-only TAK Artifactory consumer credentials. User selection uses the
+first nonblank `ARTIFACTORY_CONSUME_USER`, `ARTIFACTORY_USER`, or `TAK_USERNAME`;
+password selection independently uses `ARTIFACTORY_CONSUME_PASSWORD`,
+`ARTIFACTORY_PASSWORD`, or `TAK_PASSWORD`. Both are required. The runner preflight
+reports availability booleans only and fails explicitly when the pair is missing.
+No variable values are retrieved through administration APIs.
+
+Plugin Gradle plugin and dependency repositories put
+`https://artifacts.tak.gov/artifactory/maven-release` first when credentials are
+available, preserving Google, Maven Central, and Gradle Plugin Portal fallbacks.
+The separately checked-out SDK must also contain this supported repository
+configuration at its pinned revision; plugin settings do not affect SDK builds.
+Local builds without the pair retain public repositories.
 
 Forge uses Gradle 8.10.2 / JDK 17 and SHA-256-verified Android command-line tools
 12.0 to install platform/build-tools 34.0.0. SDK licenses are accepted on this
