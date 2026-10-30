@@ -24,7 +24,19 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { buildConfig = true }
-    testOptions { unitTests.isIncludeAndroidResources = true }
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+        unitTests.all { test ->
+            // Robolectric fetches its android-all jars from inside the test JVM, bypassing
+            // Gradle's repositories, and Maven Central rate-limits the CI runners (HTTP 429).
+            if (gradle.extra.has("takArtifactoryUrl")) {
+                test.systemProperty("robolectric.dependency.repo.id", "takArtifactory")
+                test.systemProperty("robolectric.dependency.repo.url", gradle.extra["takArtifactoryUrl"]!!)
+                test.systemProperty("robolectric.dependency.repo.username", gradle.extra["takArtifactoryUser"]!!)
+                test.systemProperty("robolectric.dependency.repo.password", gradle.extra["takArtifactoryPassword"]!!)
+            }
+        }
+    }
 }
 
 apply(from = rootProject.file("gradle/weartak-sideload-production.gradle"))

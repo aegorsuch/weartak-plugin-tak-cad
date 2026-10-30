@@ -115,8 +115,13 @@ branch pushes, tags, and manual pipelines; push pipelines are suppressed when an
 open merge request already provides coverage. Requires a Linux Docker-compatible
 runner with outbound access to Google Android downloads/Maven, Gradle/Maven
 repositories, Docker Hub, and the public personal SDK mirror on GitHub.
-SDK source checkout remains public. Forge dependency resolution requires the
-existing read-only TAK Artifactory consumer credentials. User selection uses the
+SDK source checkout remains public. Forge includes the shared TAK Artifactory
+token-service template and exchanges job identity for an ephemeral token before
+every Gradle build, including the separate SDK build. The root Gradle image uses
+`.artifactory_service_create_token_bash`; no bundled repository init script is
+installed. Token values must never be logged. If exchange requires account
+registration, sign in at `https://artifacts.tak.gov` before retrying.
+Existing approved read-only consumer aliases remain supported. User selection uses the
 first nonblank `ARTIFACTORY_CONSUME_USER`, `ARTIFACTORY_USER`, or `TAK_USERNAME`;
 password selection independently uses `ARTIFACTORY_CONSUME_PASSWORD`,
 `ARTIFACTORY_PASSWORD`, or `TAK_PASSWORD`. Both are required. The runner preflight
@@ -126,6 +131,7 @@ No variable values are retrieved through administration APIs.
 Plugin Gradle plugin and dependency repositories put
 `https://artifacts.tak.gov/artifactory/maven-release` first when credentials are
 available, preserving Google, Maven Central, and Gradle Plugin Portal fallbacks.
+Robolectric's independent test-JVM downloads use the same authenticated repository.
 The separately checked-out SDK must also contain this supported repository
 configuration at its pinned revision; plugin settings do not affect SDK builds.
 Local builds without the pair retain public repositories.
