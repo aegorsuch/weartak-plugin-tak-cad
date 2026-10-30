@@ -4,6 +4,11 @@ Native Wear OS responder plugin. Dispatcher authoring stays in WinTAK.
 GPL-3.0-or-later; complete license in `LICENSE`, upstream attribution in `NOTICE`.
 Source only: no vendor SDK, wrapper JAR, APK, certificate, or signing material.
 
+Versioning matches WearTAK/MOPP/LACE: local version `5.8.4` / code `584`;
+Forge pipeline N uses `5.8.4-pN+<CI_COMMIT_SHORT_SHA>` / code `5840000 + N`.
+Pipeline numbers outside 0-9999 or malformed pipeline values fail configuration
+rather than producing an invalid or silently downgraded CI version.
+
 ## Implemented
 
 - Main screen lists incidents, with this responder's requested or responding
