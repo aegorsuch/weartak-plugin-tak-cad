@@ -3,6 +3,7 @@ package com.weartak.plugin.takcad
 
 import android.content.Intent
 import android.os.Bundle
+import android.graphics.Typeface
 import android.view.Gravity
 import android.view.WindowManager
 import android.widget.Button
@@ -35,6 +36,9 @@ class ResponderUiTest {
             .put("uid", "incident")
             .put("incidentName", "Exercise")
             .put("status", "ACTIVE")
+            .put("details", "Training summary")
+            .put("notes", org.json.JSONArray().put(JSONObject().put("uid", "note").put("info", "Training note")))
+            .put("personnelResponding", org.json.JSONArray().put(JSONObject().put("uid", "person")))
             .put("location", JSONObject().put("coords", JSONObject()
                 .put("latitudeDeg", 38).put("longitudeDeg", -77)))
             .toString())
@@ -68,7 +72,16 @@ class ResponderUiTest {
             })
             assertTrue(icons.none { it.isEnabled })
             assertEquals("Active Incident", (children[2] as TextView).text)
-            assertTrue((children[3] as TextView).text.contains("ACTIVE"))
+            assertEquals("Exercise", (children[3] as TextView).text)
+            val fields = children.filterIsInstance<TextView>()
+            assertEquals(listOf("Active Incident", "Address", "Notes", "Responders", "Summary"),
+                fields.filter { it.isAccessibilityHeading }.map { it.text.toString() })
+            fields.chunked(2).forEach { (heading, value) ->
+                assertEquals(Typeface.BOLD, shadowOf(heading.typeface).fontDescription.style and Typeface.BOLD)
+                assertEquals(Typeface.NORMAL, shadowOf(value.typeface).fontDescription.style and Typeface.BOLD)
+                assertTrue(value.text.isNotBlank())
+            }
+            assertTrue(fields.none { it.text.toString().lines().contains("ACTIVE") })
             assertFalse(children.filterIsInstance<TextView>().any {
                 it.text in listOf("Add note", "Bloodhound", "Target", "Navigation", "Back")
             })

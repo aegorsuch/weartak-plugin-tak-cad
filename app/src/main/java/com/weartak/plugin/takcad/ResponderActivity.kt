@@ -5,6 +5,7 @@ import android.app.Activity
 import android.annotation.SuppressLint
 import android.content.res.ColorStateList
 import android.graphics.Color
+import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
 import android.os.Bundle
@@ -156,7 +157,7 @@ class ResponderActivity : Activity() {
         }
         incident.detailSections(if (incident.ask.canonical == null) stateLabel(incident.participation) else null)
             .forEach { (heading, value) ->
-                text(heading, 20f)
+                text(heading, 20f, bold = true)
                 text(value)
             }
         if (incident.ask.canonical == null && incident.participation == Participation.ASKED) {
@@ -240,10 +241,11 @@ class ResponderActivity : Activity() {
         return view
     }
 
-    private fun text(value: String, size: Float = 16f) {
+    private fun text(value: String, size: Float = 16f, bold: Boolean = false) {
         content.addView(TextView(this).apply {
             text = value
             textSize = size
+            if (bold) typeface = Typeface.DEFAULT_BOLD
             setPadding(0, dp(8), 0, dp(8))
             if (size >= 20f) isAccessibilityHeading = true
         })

@@ -18,7 +18,7 @@ rather than producing an invalid or silently downgraded CI version.
   UI labels both **Requested**. Current vehicle responses in `IN_ROUTE` or
   `ON_SCENE` count as responding. Completed/cancelled canonical incidents are
   retained locally but excluded from the active list.
-- Tapping a row opens canonical details grouped by field: name/status/type,
+- Tapping a row opens canonical details grouped by field: name/type,
   narrative, location, requested callsigns/vehicle IDs, responding
   vehicles/callsigns/status/ETAs, responding personnel UIDs/arrival times, and notes newest first. Missing coordinates
   remain missing, never synthesized as `(0,0)`. Oversized fields end with an
@@ -52,7 +52,11 @@ rather than producing an invalid or silently downgraded CI version.
   Hosted rendering requires the matching additive WearTAK icon-action renderer.
   Server choices hide their semantic card titles, removing bullet separators
   without altering server names. Incident lists omit the redundant ACTIVE status,
-  retaining Requested/Responding involvement and status in incident details.
+  retaining Requested/Responding involvement. The redundant ACTIVE identity
+  token is also omitted from details without changing stored status/filtering.
+  Address, Notes, Responders, and Summary use bold headings, normal-weight values,
+  and alphabetical order after incident identity. Other fields remain present
+  in alphabetical order; missing fields are not synthesized.
   Older text-only hosts reject presentation metadata; matching-host support must
   be advertised before sending it. Update WearTAK for this hosted UX.
   Initialization advertises integer `com.weartak.hostedUi.actionPresentationVersion`

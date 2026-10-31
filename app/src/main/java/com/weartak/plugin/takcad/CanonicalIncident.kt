@@ -104,7 +104,7 @@ fun Incident.detailSections(legacyStatus: String? = null): List<Pair<String, Str
     return buildList {
         val identityValues = buildList {
             ask.title.takeIf(String::isNotBlank)?.let(::add)
-            canonical?.status?.takeIf(String::isNotBlank)?.let(::add)
+            canonical?.status?.takeIf { it.isNotBlank() && it != CadStatus.ACTIVE }?.let(::add)
             canonical?.type?.takeIf(String::isNotBlank)?.let(::add)
             if (canonical == null) legacyStatus?.takeIf(String::isNotBlank)?.let(::add)
         }.distinct().joinToString("\n")
@@ -116,7 +116,7 @@ fun Incident.detailSections(legacyStatus: String? = null): List<Pair<String, Str
 
         val location = canonical?.address?.takeIf(String::isNotBlank)
             ?: ask.position?.let { "${it.latitude}, ${it.longitude}" }
-        location?.takeIf(String::isNotBlank)?.let { add("Location" to it) }
+        location?.takeIf(String::isNotBlank)?.let { add("Address" to it) }
 
         if (canonical != null) {
             val requested = buildList {
@@ -146,7 +146,7 @@ fun Incident.detailSections(legacyStatus: String? = null): List<Pair<String, Str
             }.distinct()
             if (notes.isNotEmpty()) add("Notes" to notes.joinToString("\n"))
         }
-    }
+    }.sortedWith(compareBy<Pair<String, String>> { it.first != "Active Incident" }.thenBy { it.first })
 }
 
 private fun JSONObject.text(key: String, limit: Int): String =

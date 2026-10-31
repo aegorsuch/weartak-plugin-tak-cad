@@ -43,6 +43,9 @@ class HostedResponderUiTest {
 
     @Test fun canonicalDetailHasThreeAccessibleIconActionsAndHeaderBackWithoutVisibleTitles() {
         val record = JSONObject().put("uid", ASK.id).put("incidentName", "Exercise").put("status", "ACTIVE")
+            .put("details", "Training summary")
+            .put("location", JSONObject().put("address", JSONObject().put("streetName", "Training road")))
+            .put("personnelResponding", org.json.JSONArray().put(JSONObject().put("uid", "person")))
             .put("notes", org.json.JSONArray().put(JSONObject().put("uid", "note").put("info", "Existing note")))
         runtime.store.receive(CanonicalIncident.parse(record.toString()).ask(), 1)
         ui.setHostPresentationVersion(1)
@@ -65,7 +68,11 @@ class HostedResponderUiTest {
         assertNull(back.content.getString("actionGroup"))
         assertFalse(schema.cards.any { it.title == "Navigation" || it.title == "\uD83D\uDC3E" })
         assertTrue(schema.cards.any { it.subtitle?.contains("Existing note") == true })
-        assertTrue(schema.cards.any { it.subtitle?.contains("ACTIVE") == true })
+        val fields = schema.cards.filter { it.cardId.startsWith("incident.detail.") }
+        assertEquals(listOf("Active Incident", "Address", "Notes", "Responders", "Summary"), fields.map { it.title })
+        assertEquals("Exercise", fields.first().subtitle)
+        assertTrue(fields.none { it.subtitle.orEmpty().lines().contains("ACTIVE") })
+        assertEquals("Training road", fields.single { it.title == "Address" }.subtitle)
         assertTrue(MainUiSchemaContractValidator.validate(schema, strictV1CardTypesOnly = true) is ContractValidationResult.Ok)
         ui.invoke("takcad.back", Bundle())
         val open = ui.schema().cards.single { it.cardId == "takcad.incident.open" }
@@ -168,7 +175,7 @@ class HostedResponderUiTest {
         assertEquals("Guidance", ui.schema().cards.single { it.cardId == "route" }.title)
         assertEquals(before, ui.schema().cards.single { it.cardId == "route" }.subtitle)
         assertFalse(schema.cards.any { it.cardId.startsWith("takcad.details.") })
-        assertTrue(schema.cards.any { it.cardId == "incident.detail.1" &&
+        assertTrue(schema.cards.any { it.title == "Summary" &&
             it.subtitle!!.endsWith("…") })
     }
 
