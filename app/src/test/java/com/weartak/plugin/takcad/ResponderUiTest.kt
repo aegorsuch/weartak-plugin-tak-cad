@@ -71,11 +71,10 @@ class ResponderUiTest {
                 (it.layoutParams as LinearLayout.LayoutParams).marginStart
             })
             assertTrue(icons.none { it.isEnabled })
-            assertEquals("Active Incident", (children[2] as TextView).text)
-            assertEquals("Exercise", (children[3] as TextView).text)
             val fields = children.filterIsInstance<TextView>()
-            assertEquals(listOf("Active Incident", "Address", "Notes", "Responders", "Summary"),
+            assertEquals(listOf("Address", "Notes", "Responders", "Summary"),
                 fields.filter { it.isAccessibilityHeading }.map { it.text.toString() })
+            assertFalse(fields.any { it.text.toString().contains("Exercise") })
             fields.chunked(2).forEach { (heading, value) ->
                 assertEquals(Typeface.BOLD, shadowOf(heading.typeface).fontDescription.style and Typeface.BOLD)
                 assertEquals(Typeface.NORMAL, shadowOf(value.typeface).fontDescription.style and Typeface.BOLD)
@@ -143,6 +142,18 @@ class ResponderUiTest {
             val activity = controller.get()
             fun content() = (activity.findViewById<android.view.ViewGroup>(android.R.id.content)
                 .getChildAt(0) as ScrollView).getChildAt(0) as LinearLayout
+            val initialList = content().children()
+            val initialActiveHeader = initialList.indexOfFirst {
+                it is TextView && it.text == "Active Incident"
+            }
+            val initialOtherHeader = initialList.indexOfFirst {
+                it is TextView && it.text == "Other Incidents"
+            }
+            val initialIncident = initialList.indexOfFirst {
+                it is Button && it.text.toString().startsWith("Exercise")
+            }
+            assertTrue(initialActiveHeader >= 0 && initialActiveHeader < initialOtherHeader &&
+                initialOtherHeader < initialIncident)
             content().children().filterIsInstance<Button>()
                 .single { it.text.toString().startsWith("Exercise") }.performClick()
             fun icons() = (content().getChildAt(1) as LinearLayout).children().filterIsInstance<ImageButton>()
@@ -164,6 +175,20 @@ class ResponderUiTest {
             shadowOf(android.os.Looper.getMainLooper()).idle()
             assertEquals("Stop Bloodhound", icons()[1].contentDescription)
             assertEquals(R.drawable.ic_stop, shadowOf(icons()[1].drawable).createdFromResId)
+            (content().getChildAt(0) as LinearLayout).children().filterIsInstance<ImageButton>()
+                .single().performClick()
+            runtime.awaitIdle()
+            shadowOf(android.os.Looper.getMainLooper()).idle()
+            val activeList = content().children()
+            val activeHeader = activeList.indexOfFirst { it is TextView && it.text == "Active Incident" }
+            val otherHeader = activeList.indexOfFirst { it is TextView && it.text == "Other Incidents" }
+            val activeRow = activeList.indexOfFirst { it is Button && it.text.toString().startsWith("Exercise") }
+            assertTrue(activeHeader >= 0 && activeHeader < activeRow && activeRow < otherHeader)
+            assertEquals(1, activeList.count { it is Button && it.text.toString().startsWith("Exercise") })
+            (activeList[activeRow] as Button).performClick()
+            runtime.awaitIdle()
+            shadowOf(android.os.Looper.getMainLooper()).idle()
+            assertEquals("Stop Bloodhound", icons()[1].contentDescription)
             icons()[2].performClick()
             runtime.awaitIdle()
             assertEquals(listOf(C.ACTION_BLOODHOUND, C.ACTION_TARGET), maps.map { it.getString(C.KEY_ACTION) })

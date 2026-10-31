@@ -74,22 +74,23 @@ class CanonicalIncidentTest {
         val incident = CanonicalIncident.parse(record(name = "Exercise")
             .put("details", "Exercise").toString())
         val sections = Incident(incident.ask()).detailSections()
-        assertEquals(listOf("Active Incident", "Address"), sections.map { it.first })
-        assertEquals("Exercise", sections.first().second)
+        assertEquals(listOf("Address"), sections.map { it.first })
+        assertTrue(sections.none { it.second.contains("Exercise") })
     }
 
-    @Test fun incidentFieldsAreAlphabeticalAndOmitOnlyTheActiveStatusToken() {
+    @Test fun incidentDetailsOmitIdentityBlockAndActiveTokenButKeepFieldsAlphabetical() {
         val incident = CanonicalIncident.parse(record().put("incidentType", JSONObject().put("name", "Fire"))
             .put("notes", JSONArray().put(JSONObject().put("uid", "note").put("info", "Training note")))
             .put("personnelResponding", JSONArray().put(JSONObject().put("uid", "person")))
             .toString())
         val sections = Incident(incident.ask()).detailSections()
-        assertEquals(listOf("Active Incident", "Address", "Notes", "Responders", "Summary"),
+        assertEquals(listOf("Address", "Notes", "Responders", "Summary"),
             sections.map { it.first })
-        assertEquals("Exercise\nFire", sections.first().second)
         assertEquals("ACTIVE", incident.status)
         assertEquals("Synthetic details <north>", sections.last().second)
-        assertTrue(sections.none { it.second.lines().contains("ACTIVE") })
+        assertTrue(sections.none { (_, value) ->
+            value.lines().any { it == "ACTIVE" || it == "Exercise" || it == "Fire" }
+        })
     }
 
     @Test fun requestsMatchExactSelfCallsignOrVehicleUidButNeverBlankIdentity() {
@@ -181,7 +182,9 @@ class CanonicalIncidentTest {
                 details.cards.take(4).map { it.cardId })
             assertEquals(listOf("BACK", "NOTE", "BLOODHOUND", "TARGET"),
                 details.cards.take(4).map { it.content.getString("actionIcon") })
-            assertEquals("Z mine", details.cards.single { it.cardId == "incident.detail.0" }.subtitle)
+            assertEquals("Address", details.cards.single { it.cardId == "incident.detail.0" }.title)
+            assertEquals("38.0, -77.0", details.cards.single { it.cardId == "incident.detail.0" }.subtitle)
+            assertFalse(details.cards.any { it.subtitle.orEmpty().contains("Z mine") })
             assertFalse(details.cards.any { it.cardId in setOf("limits", "takcad.incident.accept", "takcad.incident.decline") })
             runtime.accept("mine")
             runtime.awaitIdle()

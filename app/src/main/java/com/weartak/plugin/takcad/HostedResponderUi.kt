@@ -17,7 +17,12 @@ class HostedResponderUi(
         const val SERVER_PAGE = 4
     }
 
-    private val navigation = ResponderNavigation(runtime.store, runtime::visibleIncidents)
+    private val navigation = ResponderNavigation(
+        runtime.store,
+        runtime::visibleIncidents,
+        pageableIncidents = { incidents -> incidents.filterNot { runtime.isBloodhounding(it.ask.id) } },
+        incidentPageSize = 6,
+    )
     @Volatile private var presentationSupported = false
     private var routeTextPage = 0
     private var displayedRoute: String? = null
@@ -60,6 +65,8 @@ class HostedResponderUi(
         }
         val incident = view.incident
         val canonical = incident?.ask?.canonical
+        val activeBloodhoundIncident = view.incidents.firstOrNull { runtime.isBloodhounding(it.ask.id) }
+        val otherIncidents = view.incidents.filterNot { it.ask.id == activeBloodhoundIncident?.ask?.id }
         if (serverPicker && incident == null) {
             action("takcad.server.cancel", "Back", cardTitle = "Back", icon = "BACK", headerEnd = true)
             status("server.header", "Active Server", "")
@@ -81,7 +88,15 @@ class HostedResponderUi(
             action("takcad.server.choose", "${boundedText(runtime.selectedServerName() ?: "Select", 200)} \u25BE",
                 runtime.canSelectServer(), cardTitle = "Active Server")
             status("incidents.header", "Active Incident", "")
-            view.incidents.drop(view.incidentOffset).take(6).forEachIndexed { index, item ->
+            activeBloodhoundIncident?.let { item ->
+                val state = if (item.ask.canonical == null) participation(item.participation) else
+                    runtime.involvement(item)
+                action("takcad.incident.open", item.ask.title, incidentId = item.ask.id,
+                    cardId = "takcad.incident.open.active", cardTitle = state ?: item.ask.title,
+                    showTitle = state != null)
+            }
+            status("incidents.other.header", "Other Incidents", "")
+            otherIncidents.drop(view.incidentOffset).take(6).forEachIndexed { index, item ->
                 val state = if (item.ask.canonical == null) participation(item.participation) else
                     runtime.involvement(item)
                 action("takcad.incident.open", item.ask.title,
@@ -89,9 +104,9 @@ class HostedResponderUi(
                     cardId = if (index == 0) "takcad.incident.open" else "takcad.incident.open.$index",
                     cardTitle = state ?: item.ask.title, showTitle = state != null)
             }
-            if (view.incidents.size > 6) {
+            if (otherIncidents.size > 6) {
                 action("takcad.incidents.previous", "Previous", view.incidentOffset > 0, cardTitle = "\u2039")
-                action("takcad.incidents.next", "Next", view.incidentOffset + 6 < view.incidents.size, cardTitle = "\u203A")
+                action("takcad.incidents.next", "Next", view.incidentOffset + 6 < otherIncidents.size, cardTitle = "\u203A")
             }
         } else {
             val id = incident.ask.id

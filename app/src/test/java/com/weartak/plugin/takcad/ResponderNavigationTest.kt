@@ -30,6 +30,21 @@ class ResponderNavigationTest {
         assertNull(navigation.snapshot().incident)
     }
 
+    @Test fun pinnedBloodhoundIncidentDoesNotConsumePageAndOffsetReclamps() {
+        val store = IncidentStore(folder.newFile())
+        repeat(7) { store.receive(ASK.copy(id = "incident-$it"), it.toLong()) }
+        var activeId: String? = null
+        val navigation = ResponderNavigation(
+            store,
+            pageableIncidents = { incidents -> incidents.filterNot { it.ask.id == activeId } },
+            incidentPageSize = 6,
+        )
+        navigation.pageIncidents(6)
+        assertEquals(6, navigation.snapshot().incidentOffset)
+        activeId = "incident-6"
+        assertEquals(0, navigation.snapshot().incidentOffset)
+    }
+
     @Test fun instructionsResetOnNewRouteAndCannotOverflow() {
         val store = IncidentStore(folder.newFile())
         store.receive(ASK, 1)
