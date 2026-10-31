@@ -286,13 +286,15 @@ to validate unsigned release assembly. The signed artifact has **not** been
 verified until a protected default-branch pipeline passes its certificate check.
 
 After successful signature verification, the protected-main Forge job retains
-only `dist/TAK-CAD-production.apk` and its `dist/SHA256SUMS` checksum as a
-downloadable CI artifact for 30 days, matching Sextant/LACE main-build artifact
-retention. The APK is copied into that artifact directory only after exact
-certificate verification succeeds. Merge requests, unprotected branches, failed
-signatures, and debug builds cannot create this production artifact. Signing
-keystore/properties are removed before artifact upload; no APK or signing material
-is committed.
+only `dist/WearTAK-Plugin-TAK-CAD-<version>-p<pipeline>.apk` and its
+`dist/SHA256SUMS` checksum as a downloadable CI artifact for 30 days, matching
+the WearTAK plugin release naming convention and Sextant/LACE main-build artifact
+retention. APK version and embedded pipeline IID come from the manifest, and
+embedded IID must match `CI_PIPELINE_IID`. The APK is copied into that artifact
+directory only after exact certificate verification succeeds.
+Merge requests, unprotected branches, failed signatures, and debug builds cannot
+create this production artifact. Signing keystore/properties are removed before
+artifact upload; no APK or signing material is committed.
 
 **No automatic Forge GitHub publisher or persistent remote mirror is enabled.**
 The user authorized scoped manual source mirroring and production APK publication
@@ -300,8 +302,9 @@ to personal `aegorsuch/weartak-plugin-tak-cad`, never a company repository.
 Publication must wait for the protected-main Forge signature check, recheck that
 personal main is an ancestor of the exact canonical source SHA, and use only a
 normal fast-forward push. Divergence stops publication; no force overwrite.
-Publish the verified production APK and matching SHA256SUMS with that source SHA
-in release notes. Do not substitute a locally debug-signed APK.
+Publish the verified production APK as
+`WearTAK-Plugin-TAK-CAD-<version>-p<pipeline>.apk` and matching SHA256SUMS with
+that source SHA in release notes. Do not substitute a locally debug-signed APK.
 Existing authenticated operator tools are sufficient for this one-time flow;
 no new token, persistent access, GitLab variable, or mirror configuration is
 required. Ongoing automatic publication remains separate, unconfigured work.
