@@ -78,6 +78,9 @@ class CadService : Service() {
             transition(PluginLifecycleEvent.INITIALIZED)
             hostUid = init.hostUid
             runtime.attach(control, HostServicesContract.fromHostExtras(init.hostExtras)?.let(::CadHostServices))
+            @Suppress("DEPRECATION")
+            val presentationVersion = init.hostExtras.get("com.weartak.hostedUi.actionPresentationVersion") as? Int ?: 0
+            hostedUi.setHostPresentationVersion(presentationVersion)
         }
 
         override fun startPlugin() {
@@ -95,6 +98,7 @@ class CadService : Service() {
         override fun shutdownPlugin() {
             requireHost()
             runtime.stop(detach = true)
+            hostedUi.setHostPresentationVersion(0)
             transition(PluginLifecycleEvent.HOST_SHUTDOWN)
             hostCallback = null
             hostUid = null
@@ -158,6 +162,7 @@ class CadService : Service() {
 
     override fun onUnbind(intent: Intent?): Boolean {
         runtime.stop(detach = true)
+        hostedUi.setHostPresentationVersion(0)
         hostUid = null
         hostCallback = null
         lifecycle.dispatch(PluginLifecycleEvent.RESET)
@@ -166,6 +171,7 @@ class CadService : Service() {
 
     override fun onDestroy() {
         runtime.stop(detach = true)
+        hostedUi.setHostPresentationVersion(0)
         super.onDestroy()
     }
 }

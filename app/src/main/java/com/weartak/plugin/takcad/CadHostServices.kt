@@ -8,7 +8,12 @@ import org.json.JSONException
 import org.json.JSONObject
 
 data class CadServer(val id: String, val name: String)
-data class CadHostCapabilities(val servers: List<CadServer>, val mapActions: Set<String>, val takHttps: Boolean)
+data class CadHostCapabilities(
+    val servers: List<CadServer>,
+    val mapActions: Set<String>,
+    val takHttps: Boolean,
+    val activeBloodhoundUid: String? = null,
+)
 data class CadNoteDraft(val incidentUid: String, val timestamp: String, val creator: String, val info: String)
 data class CadVehicleResponseDraft(val uid: String, val callsign: String, val vehicleUid: String, val incidentUid: String)
 
@@ -24,8 +29,11 @@ object CadStatus {
 
 /** Synchronous adapter; callers run exclusively on the responder worker. */
 class CadHostServices(private val services: IWearTakHostServices) {
-    private companion object {
-        const val SUBMIT = "/Marti/api/plugins/tak.server.plugins.TakCadServerPlugin/submit"
+    companion object {
+        const val ACTION_STOP_BLOODHOUND = "bloodhound.stop"
+        const val ACTIVE_BLOODHOUND_UID = "activeBloodhoundUid"
+        const val RETURN_TO_MAIN = "returnToMain"
+        private const val SUBMIT = "/Marti/api/plugins/tak.server.plugins.TakCadServerPlugin/submit"
     }
 
     fun capabilities(): CadHostCapabilities {
@@ -39,7 +47,8 @@ class CadHostServices(private val services: IWearTakHostServices) {
         require(servers.size <= 100 && servers.all { it.id.isNotBlank() && it.id.length <= 256 && it.name.length <= 512 })
         require(servers.map { it.id }.distinct().size == servers.size) { "Duplicate host server ID" }
         return CadHostCapabilities(servers.sortedWith(compareBy<CadServer> { it.name }.thenBy { it.id }),
-            result.getStringArrayList(C.KEY_MAP_ACTIONS).orEmpty().toSet(), result.getBoolean(C.KEY_TAK_HTTPS))
+            result.getStringArrayList(C.KEY_MAP_ACTIONS).orEmpty().toSet(), result.getBoolean(C.KEY_TAK_HTTPS),
+            result.getString(ACTIVE_BLOODHOUND_UID))
     }
 
     fun incidents(serverId: String): List<CanonicalIncident> =
@@ -124,8 +133,15 @@ class CadHostServices(private val services: IWearTakHostServices) {
         return uid
     }
 
-    fun mapAction(action: String, incident: Incident) {
-        require(action in setOf(C.ACTION_BLOODHOUND, C.ACTION_TARGET)) { "Unsupported map action" }
+    fun mapAction(action: String, incident: Incident, returnToMain: Boolean = false) {
+        require(action in setOf(C.ACTION_BLOODHOUND, C.ACTION_TARGET, ACTION_STOP_BLOODHOUND)) { "Unsupported map action" }
+        if (action == ACTION_STOP_BLOODHOUND) {
+            checked(services.requestMapAction(Bundle().apply {
+                putString(C.KEY_ACTION, action)
+                putString(C.KEY_UID, incident.ask.id)
+            }))
+            return
+        }
         val position = requireNotNull(incident.ask.position) { "Incident location unavailable" }
         checked(services.requestMapAction(Bundle().apply {
             putString(C.KEY_ACTION, action)
@@ -133,6 +149,7 @@ class CadHostServices(private val services: IWearTakHostServices) {
             putString(C.KEY_LABEL, incident.ask.title.take(256))
             putDouble(C.KEY_LATITUDE, position.latitude)
             putDouble(C.KEY_LONGITUDE, position.longitude)
+            if (action == C.ACTION_BLOODHOUND && returnToMain) putBoolean(RETURN_TO_MAIN, true)
         }))
     }
 

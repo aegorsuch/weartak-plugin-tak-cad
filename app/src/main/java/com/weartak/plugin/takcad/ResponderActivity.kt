@@ -2,14 +2,19 @@
 package com.weartak.plugin.takcad
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.annotation.SuppressLint
+import android.content.res.ColorStateList
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.RippleDrawable
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.text.InputFilter
 import android.text.InputType
 import android.view.View
+import android.view.Gravity
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageButton
@@ -50,6 +55,11 @@ class ResponderActivity : Activity() {
         handler.post(tick)
     }
 
+    override fun onResume() {
+        super.onResume()
+        runtime.refreshMapState()
+    }
+
     override fun onStop() {
         runtime.unobserve(observer)
         handler.removeCallbacksAndMessages(null)
@@ -62,8 +72,8 @@ class ResponderActivity : Activity() {
         super.onSaveInstanceState(outState)
     }
 
-    private fun surface() {
-        val oldScroll = if (::content.isInitialized) (content.parent as? ScrollView)?.scrollY ?: 0 else 0
+    private fun surface(resetScroll: Boolean = false) {
+        val oldScroll = if (!resetScroll && ::content.isInitialized) (content.parent as? ScrollView)?.scrollY ?: 0 else 0
         content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             val side = if (resources.configuration.isScreenRound) 32 else 20
@@ -74,11 +84,12 @@ class ResponderActivity : Activity() {
         scroll.post { scroll.scrollTo(0, oldScroll) }
     }
 
-    private fun render() {
+    private fun render(resetScroll: Boolean = false) {
         if (isFinishing || isDestroyed) return
-        surface()
+        surface(resetScroll)
         val incidents = runtime.visibleIncidents()
         if (pickingServer && selected == null) {
+            backArrow { pickingServer = false; render(resetScroll = true) }
             text("Active Server", 20f)
             val servers = runtime.servers()
             serverOffset = serverOffset.coerceIn(0, ((servers.size - 1) / SERVER_PAGE).coerceAtLeast(0) * SERVER_PAGE)
@@ -87,14 +98,13 @@ class ResponderActivity : Activity() {
                 button("$mark${server.name}", runtime.isRunning()) {
                     pickingServer = false
                     runtime.selectServer(server.id)
-                    render()
+                    render(resetScroll = true)
                 }
             }
             if (servers.size > SERVER_PAGE) {
                 button("Previous", serverOffset > 0) { serverOffset -= SERVER_PAGE; render() }
                 button("Next", serverOffset + SERVER_PAGE < servers.size) { serverOffset += SERVER_PAGE; render() }
             }
-            button("Back") { pickingServer = false; render() }
             return
         }
         if (selected == null) {
@@ -104,18 +114,18 @@ class ResponderActivity : Activity() {
                 pickingServer = true
                 serverOffset = 0
                 runtime.refreshServers()
-                render()
+                render(resetScroll = true)
             }
             text("Active Incident", 20f)
             for (incident in incidents) {
                 val state = if (incident.ask.canonical == null) stateLabel(incident.participation) else
-                    listOfNotNull(runtime.involvement(incident), incident.ask.canonical.status).distinct().joinToString(" | ")
-                button("${incident.ask.title}\n$state") {
+                    runtime.involvement(incident)
+                button(listOfNotNull(incident.ask.title, state).joinToString("\n")) {
                     selected = incident.ask.id
                     runtime.clearWriteResult()
                     step = 0
                     routeJson = null
-                    render()
+                    render(resetScroll = true)
                 }
             }
             button(getString(R.string.configuration)) { setup() }
@@ -124,23 +134,30 @@ class ResponderActivity : Activity() {
         val incident = incidents.firstOrNull { it.ask.id == selected }
         if (incident == null) {
             selected = null
-            render()
+            render(resetScroll = true)
             return
+        }
+        backArrow {
+            selected = null
+            runtime.clearWriteResult()
+            render(resetScroll = true)
         }
         if (incident.ask.canonical != null) {
             val hasPosition = incident.ask.position != null
+            val stopping = runtime.isBloodhounding(incident.ask.id)
             actionRow(
-                bloodhound = if (hasPosition) ({ runtime.mapAction(incident.ask.id, C.ACTION_BLOODHOUND) }) else null,
-                target = if (hasPosition) ({ runtime.mapAction(incident.ask.id, C.ACTION_TARGET) }) else null,
+                bloodhound = { runtime.toggleBloodhound(incident.ask.id) },
+                target = { runtime.mapAction(incident.ask.id, C.ACTION_TARGET) },
                 note = { startActivity(NoteActivity.intent(this, incident.ask.id)) },
-                bloodhoundEnabled = runtime.canMapAction(C.ACTION_BLOODHOUND),
-                targetEnabled = runtime.canMapAction(C.ACTION_TARGET),
+                bloodhoundEnabled = stopping || (hasPosition && runtime.canMapAction(C.ACTION_BLOODHOUND)),
+                targetEnabled = hasPosition && runtime.canMapAction(C.ACTION_TARGET),
                 noteEnabled = runtime.canWrite(),
+                stopping = stopping,
             )
         }
         incident.detailSections(if (incident.ask.canonical == null) stateLabel(incident.participation) else null)
             .forEach { (heading, value) ->
-                text(heading, 20f)
+                text(heading, 20f, bold = true)
                 text(value)
             }
         if (incident.ask.canonical == null && incident.participation == Participation.ASKED) {
@@ -171,26 +188,6 @@ class ResponderActivity : Activity() {
                         age(it.receivedAt), if (age(it.receivedAt) > 90) getString(R.string.stale) else ""))
                 }
             }
-        }
-        incident.ask.canonical?.let { writeControls(incident, it) }
-    }
-
-    private fun writeControls(incident: Incident, canonical: CanonicalIncident) {
-        writeResult()?.let { text(it) }
-        button("${getString(R.string.status_choose, CadStatus.label(canonical.status))} \u25BE", runtime.canWrite()) {
-            val choices = CadStatus.VALUES.filter { it != canonical.status }
-            AlertDialog.Builder(this)
-                .setTitle(getString(R.string.status_set))
-                .setItems(choices.map(CadStatus::label).toTypedArray()) { _, which ->
-                    val target = choices[which]
-                    AlertDialog.Builder(this)
-                        .setMessage(getString(R.string.status_confirm, incident.ask.title, CadStatus.label(target)))
-                        .setPositiveButton(getString(R.string.status_set)) { _, _ -> runtime.setStatus(incident.ask.id, target) }
-                        .setNegativeButton(getString(R.string.cancel), null)
-                        .show()
-                }
-                .setNegativeButton(getString(R.string.cancel), null)
-                .show()
         }
     }
 
@@ -224,7 +221,7 @@ class ResponderActivity : Activity() {
         if (configuring || selected != null) {
             configuring = false
             selected = null
-            render()
+            render(resetScroll = true)
         } else super.onBackPressed()
     }
 
@@ -244,10 +241,11 @@ class ResponderActivity : Activity() {
         return view
     }
 
-    private fun text(value: String, size: Float = 16f) {
+    private fun text(value: String, size: Float = 16f, bold: Boolean = false) {
         content.addView(TextView(this).apply {
             text = value
             textSize = size
+            if (bold) typeface = Typeface.DEFAULT_BOLD
             setPadding(0, dp(8), 0, dp(8))
             if (size >= 20f) isAccessibilityHeading = true
         })
@@ -266,22 +264,35 @@ class ResponderActivity : Activity() {
     }
 
     private fun actionRow(
-        bloodhound: (() -> Unit)?,
-        target: (() -> Unit)?,
+        bloodhound: () -> Unit,
+        target: () -> Unit,
         note: () -> Unit,
         bloodhoundEnabled: Boolean,
         targetEnabled: Boolean,
         noteEnabled: Boolean,
+        stopping: Boolean,
     ) {
         content.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_HORIZONTAL
             val actionSize = dp(48)
             fun add(icon: Int, description: String, enabled: Boolean, action: () -> Unit) = addView(
                 mapAction(icon, description, enabled, action),
-                LinearLayout.LayoutParams(actionSize, actionSize).apply { weight = 1f })
-            if (bloodhound != null) add(R.drawable.ic_bloodhound, "Bloodhound", bloodhoundEnabled, bloodhound)
-            if (target != null) add(R.drawable.ic_target, "Target", targetEnabled, target)
+                LinearLayout.LayoutParams(actionSize, actionSize).apply {
+                    if (childCount > 0) marginStart = dp(4)
+                })
             add(R.drawable.ic_note, getString(R.string.add_note), noteEnabled, note)
+            add(if (stopping) R.drawable.ic_stop else R.drawable.bloodhound,
+                getString(if (stopping) R.string.stop_bloodhound else R.string.bloodhound), bloodhoundEnabled, bloodhound)
+            add(R.drawable.ic_target, getString(R.string.focus_incident), targetEnabled, target)
+        })
+    }
+
+    private fun backArrow(action: () -> Unit) {
+        content.addView(LinearLayout(this).apply {
+            gravity = Gravity.END
+            addView(mapAction(R.drawable.ic_back, getString(R.string.back), true, action),
+                LinearLayout.LayoutParams(dp(48), dp(48)))
         })
     }
 
@@ -290,8 +301,16 @@ class ResponderActivity : Activity() {
             setImageResource(icon)
             contentDescription = description
             isEnabled = enabled
+            val states = arrayOf(intArrayOf(android.R.attr.state_enabled), intArrayOf())
+            imageTintList = ColorStateList(states, intArrayOf(Color.WHITE, 0x61FFFFFF))
+            background = RippleDrawable(ColorStateList.valueOf(0x33FFFFFF),
+                GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    val color = if (icon == R.drawable.ic_stop) 0xFFB3261E.toInt() else Color.DKGRAY
+                    setColor(ColorStateList(states, intArrayOf(color, 0xFF131313.toInt())))
+                }, null)
             scaleType = android.widget.ImageView.ScaleType.CENTER_INSIDE
-            setPadding(dp(8), dp(8), dp(8), dp(8))
+            setPadding(dp(13), dp(13), dp(13), dp(13))
             setOnClickListener { action() }
         }
 

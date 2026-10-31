@@ -18,7 +18,7 @@ rather than producing an invalid or silently downgraded CI version.
   UI labels both **Requested**. Current vehicle responses in `IN_ROUTE` or
   `ON_SCENE` count as responding. Completed/cancelled canonical incidents are
   retained locally but excluded from the active list.
-- Tapping a row opens canonical details grouped by field: name/status/type,
+- Tapping a row opens canonical details grouped by field: name/type,
   narrative, location, requested callsigns/vehicle IDs, responding
   vehicles/callsigns/status/ETAs, responding personnel UIDs/arrival times, and notes newest first. Missing coordinates
   remain missing, never synthesized as `(0,0)`. Oversized fields end with an
@@ -38,14 +38,47 @@ rather than producing an invalid or silently downgraded CI version.
 - Expanded canonical detail has **Bloodhound** and **Target** actions when
   coordinates exist. The plugin sends the actual coordinates and incident
   UID/label to supported host actions on its worker thread. Bloodhound success
-  means activation requested, not arrival or route completion. Existing ACTION
-  presentation is functional text: the host extension adds no per-action icon
-  renderer. Older hosts disable these controls and show an update-required status.
-- Canonical detail supports **Add note** with Wear keyboard/voice input and
-  **Status** changes to Active, Cancelled, or Completed with confirmation.
+  means activation requested, not arrival or route completion. Older hosts without
+  map capabilities disable these controls and show an update-required status.
+- Hosted and standalone incident detail have three icon-only actions in order:
+  **Add note**, **Bloodhound**, **Focus incident on map**. It matches WearTAK map
+  contact controls: 48dp dark-gray circular touch targets, 22dp white artwork,
+  4dp spacing, accessible names, and disabled states. Bloodhound uses WearTAK's
+  existing dog-head resource, retained byte-for-byte (provenance in NOTICE).
+  Missing coordinates disable, rather than hide, both map actions; note entry
+  still depends on write availability. Existing notes remain visible.
+  A top-right accessible back arrow returns to incidents or exits the
+  server picker; no text Back button appears.
+  Hosted rendering requires the matching additive WearTAK icon-action renderer.
+  Server choices hide their semantic card titles, removing bullet separators
+  without altering server names. Incident lists omit the redundant ACTIVE status,
+  retaining Requested/Responding involvement. The redundant ACTIVE identity
+  token is also omitted from details without changing stored status/filtering.
+  Address, Notes, Responders, and Summary use bold headings, normal-weight values,
+  and alphabetical order after incident identity. Other fields remain present
+  in alphabetical order; missing fields are not synthesized.
+  Older text-only hosts reject presentation metadata; matching-host support must
+  be advertised before sending it. Update WearTAK for this hosted UX.
+  Initialization advertises integer `com.weartak.hostedUi.actionPresentationVersion`
+  at least 1 in `PluginInitParcel.hostExtras`. Without it, ACTION content keeps
+  exactly the original four keys and text-only rendering; disconnect/shutdown
+  clears the presentation grant.
+  With host map capability `bloodhound.stop`, `activeBloodhoundUid` identifies
+  only the active target owned by this plugin. Its Bloodhound button becomes a
+  red stop button with an accessible Stop Bloodhound name. Stop sends only
+  `{action: "bloodhound.stop", uid: incidentId}`, needs no coordinates, and never
+  records another CAD response. Host rejects stale/nonmatching stops without
+  affecting other tracking. Live capabilities refresh on hosted schema requests
+  and standalone resume. Successful starts return to WearTAK's main screen via
+  the matching host while tracking and the responding write remain active;
+  note and target behavior are unchanged.
+- Canonical detail supports **Add note** with Wear keyboard/voice input.
   Notes use the host-reported watch callsign and preserve drafts on failure.
-  Both writes refresh the incident. Status writes fetch the current record,
-  change only its status, and verify the result after updating.
+  Note writes refresh the incident. Manual status controls and CAD update,
+  Status, and Navigation sections are removed from incident detail; the
+  automatic verified responding write on Bloodhound start remains intact.
+  Runtime status-write support remains independently tested but is not exposed
+  as a manual hosted or standalone action.
   The host HTTP bridge must support PUT/POST JSON bodies with the exact
   `application/json` content type. Hosted note entry additionally requires
   the host to bind plugins with `BIND_ALLOW_ACTIVITY_STARTS`; without it,
@@ -88,7 +121,8 @@ rather than producing an invalid or silently downgraded CI version.
   key via host settings, backups, logs, or repository configuration.
 - Serve responder list/details, accept/local-decline, refresh, instructions, and
   team ETAs through the WearTAK hosted TAK-CAD page. Plugin owns selection/paging;
-  no hosted action launches an activity. Long instructions are paged within SDK
+  note entry opens NoteActivity and supported Bloodhound start returns to the
+  host main screen. Route/list paging stays in the hosted page. Long instructions are paged within SDK
   text/card bounds. The launcher remains a development fallback for routing
   setup until a secure hosted credential-input contract exists.
 
@@ -303,6 +337,12 @@ repository does not modify the host.
 Schema uses SDK STATUS title/subtitle for bounded static text and SDK ACTION cards
 created through `MainUiActionContract.createContent`. Content keys are `actionId`,
 `actionLabel`, `enabled` (Boolean), and `actionArgsJson` (JSON object of strings).
+Additive presentation fields are `actionPresentation` (`ICON` for icon buttons),
+`actionIcon` (`NOTE`, `BLOODHOUND`, `STOP`, `TARGET`, `BACK`), `actionGroup` (body icon row),
+`actionPlacement` (`HEADER_END` for Back), and `showTitle` (`false` for icon actions
+and server choices). Card titles stay nonblank semantic names; action labels
+become accessible names on icon controls, not visible text. Other actions retain
+default text presentation. No drawable resource IDs or image payloads cross Binder.
 Host invokes `invokeMainUiAction` only on user tap, passing decoded string args;
 it re-fetches schema after page entry/actions and main-UI schema/state callbacks.
 No private content-binding keys, route payloads, or credentials are invented.

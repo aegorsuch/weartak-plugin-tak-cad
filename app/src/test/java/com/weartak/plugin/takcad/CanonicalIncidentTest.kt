@@ -41,7 +41,7 @@ class CanonicalIncidentTest {
         assertEquals(Position(38.0, -77.0), event.position)
         assertEquals("Medical", event.canonical!!.type)
         assertEquals("Exercise Road, Training City",
-            Incident(event).detailSections().single { it.first == "Location" }.second)
+            Incident(event).detailSections().single { it.first == "Address" }.second)
         val file = folder.newFile()
         val store = IncidentStore(file)
         store.receive(event, 1)
@@ -74,8 +74,22 @@ class CanonicalIncidentTest {
         val incident = CanonicalIncident.parse(record(name = "Exercise")
             .put("details", "Exercise").toString())
         val sections = Incident(incident.ask()).detailSections()
-        assertEquals(listOf("Active Incident", "Location"), sections.map { it.first })
-        assertEquals("Exercise\nACTIVE", sections.first().second)
+        assertEquals(listOf("Active Incident", "Address"), sections.map { it.first })
+        assertEquals("Exercise", sections.first().second)
+    }
+
+    @Test fun incidentFieldsAreAlphabeticalAndOmitOnlyTheActiveStatusToken() {
+        val incident = CanonicalIncident.parse(record().put("incidentType", JSONObject().put("name", "Fire"))
+            .put("notes", JSONArray().put(JSONObject().put("uid", "note").put("info", "Training note")))
+            .put("personnelResponding", JSONArray().put(JSONObject().put("uid", "person")))
+            .toString())
+        val sections = Incident(incident.ask()).detailSections()
+        assertEquals(listOf("Active Incident", "Address", "Notes", "Responders", "Summary"),
+            sections.map { it.first })
+        assertEquals("Exercise\nFire", sections.first().second)
+        assertEquals("ACTIVE", incident.status)
+        assertEquals("Synthetic details <north>", sections.last().second)
+        assertTrue(sections.none { it.second.lines().contains("ACTIVE") })
     }
 
     @Test fun requestsMatchExactSelfCallsignOrVehicleUidButNeverBlankIdentity() {
@@ -152,18 +166,22 @@ class CanonicalIncidentTest {
             runtime.awaitIdle()
             assertEquals(listOf("mine", "other"), runtime.visibleIncidents().map { it.ask.id })
             val ui = HostedResponderUi(runtime)
+            ui.setHostPresentationVersion(1)
             val list = ui.schema()
             val rows = list.cards.filter { it.cardId.startsWith("takcad.incident.open") }
             assertEquals(2, rows.size)
             assertTrue(rows.first().title.contains("Requested"))
+            assertTrue(rows.none { it.title.contains("ACTIVE") || it.content.getString("actionLabel")!!.contains("ACTIVE") })
+            assertFalse(rows.last().content.getBoolean("showTitle", true))
             assertEquals("Z mine", rows.first().content.getString("actionLabel"))
             assertTrue(MainUiSchemaContractValidator.validate(list, strictV1CardTypesOnly = true) is ContractValidationResult.Ok)
             ui.invoke("takcad.incident.open", Bundle().apply { putString("incidentId", "mine") })
             val details = ui.schema()
-            assertEquals(listOf("takcad.bloodhound", "takcad.target", "takcad.note.add"),
-                details.cards.take(3).map { it.cardId })
-            assertEquals(listOf("\uD83D\uDC3E", "\u2316", "\u270E"), details.cards.take(3).map { it.title })
-            assertEquals("Z mine\nACTIVE", details.cards.single { it.cardId == "incident.detail.0" }.subtitle)
+            assertEquals(listOf("takcad.back", "takcad.note.add", "takcad.bloodhound", "takcad.target"),
+                details.cards.take(4).map { it.cardId })
+            assertEquals(listOf("BACK", "NOTE", "BLOODHOUND", "TARGET"),
+                details.cards.take(4).map { it.content.getString("actionIcon") })
+            assertEquals("Z mine", details.cards.single { it.cardId == "incident.detail.0" }.subtitle)
             assertFalse(details.cards.any { it.cardId in setOf("limits", "takcad.incident.accept", "takcad.incident.decline") })
             runtime.accept("mine")
             runtime.awaitIdle()
