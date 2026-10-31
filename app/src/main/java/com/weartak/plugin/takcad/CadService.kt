@@ -24,7 +24,11 @@ import com.weartak.plugin.sdk.host.v1.HostServicesContract
 class CadService : Service() {
     private val lifecycle = PluginLifecycleMachine()
     private val runtime get() = (application as CadApplication).runtime
-    private val hostedUi by lazy { HostedResponderUi(runtime) }
+    private val hostedUi by lazy {
+        HostedResponderUi(runtime) { incidentId ->
+            startActivity(NoteActivity.intent(this, incidentId).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
+    }
     @Volatile private var hostUid: Int? = null
     private var hostCallback: IWearTakHostCallback? = null
 

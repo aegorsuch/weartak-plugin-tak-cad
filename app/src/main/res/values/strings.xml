@@ -26,4 +26,14 @@
     <string name="state_asked">Asked - acceptance required</string>
     <string name="state_declined">Declined on this watch</string>
     <string name="state_responding">Responding - delivery unconfirmed</string>
+    <string name="note_title">Note for %1$s</string>
+    <string name="note_hint">Type or speak note</string>
+    <string name="note_send">Send note</string>
+    <string name="note_discard">Discard draft</string>
+    <string name="note_empty">Note is empty</string>
+    <string name="add_note">Add note</string>
+    <string name="status_choose">Status: %1$s</string>
+    <string name="status_confirm">Set %1$s to %2$s?</string>
+    <string name="status_set">Set status</string>
+    <string name="cancel">Cancel</string>
 </resources>

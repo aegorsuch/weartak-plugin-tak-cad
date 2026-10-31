@@ -29,6 +29,7 @@ class CadRuntime(
         internal const val CAD_POLL_MS = 5_000L
         internal const val CAD_MAX_BACKOFF_MS = 300_000L
         private const val SERVER_PREFERENCE = "cadServerId"
+        private const val NOTE_DRAFT_PREFIX = "noteDraft."
     }
 
     private val settings = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
@@ -54,6 +55,12 @@ class CadRuntime(
     @Volatile var message = "Awaiting host"
         private set
     @Volatile var lastError: String? = null
+        private set
+    @Volatile private var writing = false
+    /** Last CAD write failure; persists across polls so the user sees why input was kept. */
+    @Volatile var writeError: String? = null
+        private set
+    @Volatile var writeNotice: String? = null
         private set
 
     init {
@@ -243,6 +250,107 @@ class CadRuntime(
                 message = if (action == C.ACTION_BLOODHOUND) "Bloodhound activation requested" else "Map focus requested"
             }
         }
+    }
+
+    fun canWrite(): Boolean = running && hostServices != null && selectedServerId != null && !writing
+    fun isWriting(): Boolean = writing
+    fun noteDraft(id: String): String = settings.getString(NOTE_DRAFT_PREFIX + id, "") ?: ""
+    fun saveNoteDraft(id: String, text: String) {
+        settings.edit().apply {
+            if (text.isBlank()) remove(NOTE_DRAFT_PREFIX + id) else putString(NOTE_DRAFT_PREFIX + id, text)
+        }.apply()
+    }
+    /** Caller is responsible for notifying listeners. */
+    fun clearWriteResult() {
+        if (writing) return
+        writeError = null
+        writeNotice = null
+    }
+
+    /** Draft is persisted before sending and only cleared once CAD confirms the note. */
+    fun addNote(id: String, text: String) {
+        saveNoteDraft(id, text)
+        write("Note not saved; draft kept") { epoch, services, serverId ->
+            val info = text.trim()
+            require(info.isNotEmpty()) { "Note is empty" }
+            require(info.length <= CadStatus.MAX_NOTE_CHARS) { "Note over ${CadStatus.MAX_NOTE_CHARS} characters" }
+            val incident = writableIncident(id, serverId)
+            refreshIdentity()
+            val creator = callsign.trim()
+            check(creator.isNotEmpty()) { "Watch callsign unavailable" }
+            val timestamp = java.time.Instant.ofEpochMilli(clock()).toString()
+            services.insertNote(serverId, CadNoteDraft(incident.ask.id, timestamp, creator, info))
+            saveNoteDraft(id, "")
+            writeNotice = "Note added"
+            refreshAfterWrite(epoch, "Note added")
+        }
+    }
+
+    /** Read-modify-write so only status changes; the server always answers 200, so verify by re-reading. */
+    fun setStatus(id: String, status: String) {
+        require(status in CadStatus.VALUES) { "Invalid incident status" }
+        write("Status not changed") { epoch, services, serverId ->
+            writableIncident(id, serverId)
+            val current = services.incidentJson(serverId, id)
+            checkCurrent(epoch)
+            val label = CadStatus.label(status)
+            if (CanonicalIncident.parse(current).status != status) {
+                services.updateStatus(serverId, current, status)
+                checkCurrent(epoch)
+                check(CanonicalIncident.parse(services.incidentJson(serverId, id)).status == status) {
+                    "CAD did not apply status change"
+                }
+            }
+            writeNotice = "Status set to $label"
+            refreshAfterWrite(epoch, "Status set to $label")
+        }
+    }
+
+    private fun write(failurePrefix: String, action: (Long, CadHostServices, String) -> Unit) {
+        val epoch = generation
+        synchronized(gate) {
+            if (writing) {
+                writeError = "Wait for current CAD update"
+                changed()
+                return
+            }
+            writing = true
+            writeError = null
+            writeNotice = null
+        }
+        changed()
+        enqueue {
+            try {
+                checkCurrent(epoch)
+                val services = requireNotNull(hostServices) { "Update WearTAK for CAD server access" }
+                val serverId = requireNotNull(selectedServerId) { "Select CAD server" }
+                action(epoch, services, serverId)
+            } catch (e: Exception) {
+                writeNotice = null
+                writeError = "$failurePrefix: ${e.message ?: e.javaClass.simpleName}"
+                throw e
+            } finally {
+                writing = false
+            }
+        }
+    }
+
+    private fun writableIncident(id: String, serverId: String): Incident {
+        val incident = store.snapshot().firstOrNull { it.ask.id == id && it.ask.canonical != null }
+            ?: error("Incident not found; refresh incidents")
+        check(incident.serverId == serverId) { "Select incident on current CAD server" }
+        return incident
+    }
+
+    private fun refreshAfterWrite(epoch: Long, done: String) {
+        try {
+            refreshCad()
+        } catch (e: Exception) {
+            if (e is InterruptedException) throw e
+            writeNotice = "$done; refresh failed"
+            Log.w("TakCad", "Refresh after CAD write failed", e)
+        }
+        checkCurrent(epoch)
     }
 
     private fun refreshCad() {
