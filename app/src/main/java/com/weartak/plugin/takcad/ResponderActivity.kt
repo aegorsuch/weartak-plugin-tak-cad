@@ -2,6 +2,7 @@
 package com.weartak.plugin.takcad
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.annotation.SuppressLint
 import android.os.Bundle
 import android.os.Handler
@@ -97,6 +98,7 @@ class ResponderActivity : Activity() {
             return
         }
         if (selected == null) {
+            writeResult()?.let { text(it) }
             text("Active Server", 20f)
             button("${runtime.selectedServerName() ?: "Select"} \u25BE", runtime.canSelectServer()) {
                 pickingServer = true
@@ -110,6 +112,7 @@ class ResponderActivity : Activity() {
                     listOfNotNull(runtime.involvement(incident), incident.ask.canonical.status).distinct().joinToString(" | ")
                 button("${incident.ask.title}\n$state") {
                     selected = incident.ask.id
+                    runtime.clearWriteResult()
                     step = 0
                     routeJson = null
                     render()
@@ -166,7 +169,33 @@ class ResponderActivity : Activity() {
                 }
             }
         }
+        incident.ask.canonical?.let { writeControls(incident, it) }
     }
+
+    private fun writeControls(incident: Incident, canonical: CanonicalIncident) {
+        writeResult()?.let { text(it) }
+        button(getString(R.string.add_note), runtime.canWrite()) {
+            startActivity(NoteActivity.intent(this, incident.ask.id))
+        }
+        button("${getString(R.string.status_choose, CadStatus.label(canonical.status))} \u25BE", runtime.canWrite()) {
+            val choices = CadStatus.VALUES.filter { it != canonical.status }
+            AlertDialog.Builder(this)
+                .setTitle(getString(R.string.status_set))
+                .setItems(choices.map(CadStatus::label).toTypedArray()) { _, which ->
+                    val target = choices[which]
+                    AlertDialog.Builder(this)
+                        .setMessage(getString(R.string.status_confirm, incident.ask.title, CadStatus.label(target)))
+                        .setPositiveButton(getString(R.string.status_set)) { _, _ -> runtime.setStatus(incident.ask.id, target) }
+                        .setNegativeButton(getString(R.string.cancel), null)
+                        .show()
+                }
+                .setNegativeButton(getString(R.string.cancel), null)
+                .show()
+        }
+    }
+
+    private fun writeResult(): String? =
+        if (runtime.isWriting()) "Sending to CAD\u2026" else runtime.writeError ?: runtime.writeNotice
 
     private fun setup() {
         configuring = true

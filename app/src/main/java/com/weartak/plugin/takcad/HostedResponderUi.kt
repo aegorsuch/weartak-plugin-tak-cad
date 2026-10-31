@@ -9,8 +9,14 @@ import com.weartak.plugin.sdk.model.PluginMainUiSchemaParcel
 import kotlin.math.ceil
 import com.weartak.plugin.sdk.host.v1.HostServicesContract as C
 
-class HostedResponderUi(private val runtime: CadRuntime) {
-    private companion object { const val SERVER_PAGE = 4 }
+class HostedResponderUi(
+    private val runtime: CadRuntime,
+    private val noteLauncher: ((String) -> Unit)? = null,
+) {
+    private companion object {
+        const val SERVER_PAGE = 4
+        val STATUS_ACTIONS = CadStatus.VALUES.associateBy { "takcad.status.${it.lowercase()}" }
+    }
 
     private val navigation = ResponderNavigation(runtime.store, runtime::visibleIncidents)
     private var routeTextPage = 0
@@ -18,6 +24,8 @@ class HostedResponderUi(private val runtime: CadRuntime) {
     private var displayedStep = -1
     private var serverPicker = false
     private var serverOffset = 0
+    private var statusPickerFor: String? = null
+    private var pendingStatus: String? = null
 
     @Synchronized fun schema(now: Long = System.currentTimeMillis()): PluginMainUiSchemaParcel {
         val view = navigation.snapshot()
@@ -37,7 +45,30 @@ class HostedResponderUi(private val runtime: CadRuntime) {
                 content = MainUiActionContract.createContent(id, boundedLabel, enabled, args))
         }
         val incident = view.incident
-        if (serverPicker && incident == null) {
+        if (incident?.ask?.id != statusPickerFor) {
+            statusPickerFor = null
+            pendingStatus = null
+        }
+        val canonical = incident?.ask?.canonical
+        if (incident != null && canonical != null && statusPickerFor != null) {
+            val id = incident.ask.id
+            val target = pendingStatus
+            writeResult()?.let { status("takcad.write", "CAD update", it) }
+            if (target == null) {
+                status("takcad.status.current", "Change status", "Current: ${CadStatus.label(canonical.status)}")
+                STATUS_ACTIONS.forEach { (actionId, value) ->
+                    val current = value == canonical.status
+                    action(actionId, CadStatus.label(value), runtime.canWrite() && !current, id,
+                        cardTitle = if (current) "\u2713" else "\u2022")
+                }
+            } else {
+                status("takcad.status.confirm.prompt", "Confirm status",
+                    "Set ${utf8Prefix(incident.ask.title, 160)} to ${CadStatus.label(target)}?")
+                action("takcad.status.confirm", "Set ${CadStatus.label(target)}", runtime.canWrite(), id,
+                    cardTitle = "\u2713")
+            }
+            action("takcad.status.cancel", "Cancel", true, id, cardTitle = "\u00D7")
+        } else if (serverPicker && incident == null) {
             status("server.header", "Active Server", "")
             val servers = runtime.servers()
             val selected = runtime.selectedServer()
@@ -53,6 +84,7 @@ class HostedResponderUi(private val runtime: CadRuntime) {
             }
             action("takcad.server.cancel", "Back", cardTitle = "Navigation")
         } else if (incident == null) {
+            writeResult()?.let { status("takcad.write", "CAD update", it) }
             action("takcad.server.choose", "${boundedText(runtime.selectedServerName() ?: "Select", 200)} \u25BE",
                 runtime.canSelectServer(), cardTitle = "Active Server")
             status("incidents.header", "Active Incident", "")
@@ -111,6 +143,16 @@ class HostedResponderUi(private val runtime: CadRuntime) {
                 val etas = responders.map { eta(it.callsign, it.route, it.receivedAt, now) }
                 if (etas.isNotEmpty()) status("responders", "Responder ETAs", boundedText(etas.distinct().joinToString("\n"), 256))
             }
+            if (canonical != null) {
+                // Keep one slot for Back; drop the optional result card first when the detail page is full.
+                val room = 15 - cards.size
+                val result = writeResult()
+                if (result != null && room >= 3) status("takcad.write", "CAD update", result)
+                if (room >= 2) action("takcad.note.add", "Add note", runtime.canWrite() && noteLauncher != null, id,
+                    cardTitle = "Notes")
+                if (room >= 1) action("takcad.status.choose", "${CadStatus.label(canonical.status)} \u25BE",
+                    runtime.canWrite(), id, cardTitle = "Status")
+            }
             action("takcad.back", "All incidents", cardTitle = "Navigation")
         }
         check(cards.size <= 16) { "Hosted UI exceeds SDK card limit" }
@@ -134,9 +176,41 @@ class HostedResponderUi(private val runtime: CadRuntime) {
         when (id) {
             "takcad.incident.open" -> {
                 navigation.select(requireNotNull(args?.getString("incidentId")) { "Missing incidentId" })
+                runtime.clearWriteResult()
                 routeTextPage = 0
             }
-            "takcad.back" -> navigation.back()
+            "takcad.back" -> {
+                navigation.back()
+                runtime.clearWriteResult()
+            }
+            "takcad.note.add" -> {
+                val incidentId = selectedId()
+                requireNotNull(navigation.snapshot().incident?.ask?.canonical) { "Notes require a CAD incident" }
+                check(runtime.canWrite()) { "CAD update unavailable" }
+                requireNotNull(noteLauncher) { "Note entry unavailable" }(incidentId)
+            }
+            "takcad.status.choose" -> {
+                val incidentId = selectedId()
+                requireNotNull(navigation.snapshot().incident?.ask?.canonical) { "Status requires a CAD incident" }
+                statusPickerFor = incidentId
+                pendingStatus = null
+            }
+            in STATUS_ACTIONS.keys -> {
+                require(statusPickerFor == selectedId()) { "Open status list first" }
+                pendingStatus = STATUS_ACTIONS.getValue(id)
+            }
+            "takcad.status.confirm" -> {
+                val incidentId = selectedId()
+                require(statusPickerFor == incidentId) { "Open status list first" }
+                val target = requireNotNull(pendingStatus) { "Choose a status first" }
+                statusPickerFor = null
+                pendingStatus = null
+                runtime.setStatus(incidentId, target)
+            }
+            "takcad.status.cancel" -> {
+                selectedId()
+                if (pendingStatus != null) pendingStatus = null else statusPickerFor = null
+            }
             "takcad.incidents.previous" -> navigation.pageIncidents(-6)
             "takcad.incidents.next" -> navigation.pageIncidents(6)
             "takcad.server.choose" -> {
@@ -180,6 +254,9 @@ class HostedResponderUi(private val runtime: CadRuntime) {
             else -> throw IllegalArgumentException("Unsupported TAK-CAD action: $id")
         }
     }
+
+    private fun writeResult(): String? =
+        if (runtime.isWriting()) "Sending to CAD\u2026" else runtime.writeError ?: runtime.writeNotice
 
     private fun pages(text: String): List<String> {
         val result = mutableListOf<String>()
