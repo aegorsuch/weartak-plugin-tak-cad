@@ -46,7 +46,7 @@ class ResponderUiTest {
             content = ((root.getChildAt(0) as ScrollView).getChildAt(0) as LinearLayout)
             val children = content.children()
             val mapActions = children.first() as LinearLayout
-            assertEquals(listOf("Bloodhound", "Target"), mapActions.children()
+            assertEquals(listOf("Bloodhound", "Target", "Add note"), mapActions.children()
                 .filterIsInstance<ImageButton>().map { it.contentDescription.toString() })
             assertEquals("Active Incident", (children[1] as TextView).text)
         } finally {

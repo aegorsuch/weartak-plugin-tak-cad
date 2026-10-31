@@ -107,6 +107,10 @@ class HostedResponderUi(
                     cardTitle = "\uD83D\uDC3E")
                 action("takcad.target", "Target", runtime.canMapAction(C.ACTION_TARGET), id, cardTitle = "\u2316")
             }
+            if (canonical != null) {
+                action("takcad.note.add", "Add note", runtime.canWrite() && noteLauncher != null, id,
+                    cardTitle = "\u270E")
+            }
             incident.detailSections(if (incident.ask.canonical == null) participation(incident.participation) else null)
                 .forEachIndexed { index, (title, text) ->
                     status("incident.detail.$index", title, boundedText(text, 256))
@@ -148,8 +152,6 @@ class HostedResponderUi(
                 val room = 15 - cards.size
                 val result = writeResult()
                 if (result != null && room >= 3) status("takcad.write", "CAD update", result)
-                if (room >= 2) action("takcad.note.add", "Add note", runtime.canWrite() && noteLauncher != null, id,
-                    cardTitle = "Notes")
                 if (room >= 1) action("takcad.status.choose", "${CadStatus.label(canonical.status)} \u25BE",
                     runtime.canWrite(), id, cardTitle = "Status")
             }

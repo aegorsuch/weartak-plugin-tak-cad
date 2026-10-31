@@ -406,10 +406,27 @@ class CadHostServicesTest {
         val records = initial.associateBy { it.getString("uid") }.toMutableMap()
         var applyUpdates = true
         var noteResponse: String? = null
+        var applyVehicleResponse = true
+        var vehicleInserts = 0
         fun handle(request: Bundle): String {
             val query = request.getString(C.KEY_QUERY).orEmpty()
             val uid = query.substringAfter("uid=", "")
             return when {
+                query == "fn=insertVehicleResponse" -> {
+                    vehicleInserts++
+                    val body = JSONObject(request.getString(C.KEY_BODY)!!)
+                    if (applyVehicleResponse) {
+                        val vehicle = JSONObject().put("uid", body.getString("vehicleUid"))
+                            .put("callsign", body.getString("callsign")).put("name", "Unit").put("status", "IN_ROUTE")
+                            .put("currentVehicleResponses", JSONArray().put(JSONObject()
+                                .put("incidentUid", body.getString("incidentUid"))
+                                .put("responseStatus", body.getString("responseStatus"))))
+                        val record = records.getValue(body.getString("incidentUid"))
+                        val list = record.optJSONArray("vehiclesResponding") ?: JSONArray().also { record.put("vehiclesResponding", it) }
+                        list.put(JSONObject().put("vehicle", vehicle))
+                    }
+                    """{"success":true,"result":"00000000-0000-0000-0000-000000000002"}"""
+                }
                 query == "fn=getIncidents" -> JSONArray(records.values.map { JSONObject(it.toString()) }).toString()
                 query.startsWith("fn=getIncident&") -> records.getValue(uid).toString()
                 query == "fn=insertNote" -> noteResponse ?: run {
@@ -521,6 +538,62 @@ class CadHostServicesTest {
             assertNull(runtime.writeNotice)
             assertEquals("one", runtime.visibleIncidents().single().ask.id)
             assertThrows(IllegalArgumentException::class.java) { runtime.setStatus("one", "OPEN") }
+        } finally { runtime.close() }
+    }
+
+    @Test fun bloodhoundMarksVehicleInRouteOnceAndVerifies() {
+        val cad = FakeCad(writable("one"))
+        val services = Services().apply { route = cad::handle }
+        val runtime = runtime(services)
+        val vehicle = "11111111-1111-1111-1111-111111111111"
+        try {
+            runtime.configure("uid", "", vehicle)
+            runtime.awaitIdle()
+            repeat(2) {
+                runtime.mapAction("one", C.ACTION_BLOODHOUND)
+                runtime.awaitIdle()
+                runtime.awaitIdle()
+            }
+            assertEquals(2, services.maps.size)
+            assertEquals(1, cad.vehicleInserts)
+            assertNull(runtime.writeError)
+            assertEquals("Marked responding", runtime.writeNotice)
+            val put = services.requests.first { it.getString(C.KEY_QUERY) == "fn=insertVehicleResponse" }
+            assertEquals("PUT", put.getString(C.KEY_METHOD))
+            assertEquals("/Marti/api/plugins/tak.server.plugins.TakCadServerPlugin/submit/result", put.getString(C.KEY_PATH))
+            assertEquals("application/json", put.getString(C.KEY_CONTENT_TYPE))
+            val sent = JSONObject(put.getString(C.KEY_BODY)!!)
+            assertEquals(setOf("uid", "callsign", "vehicleUid", "incidentUid", "responseStatus"), sent.keys().asSequence().toSet())
+            assertEquals("IN_ROUTE", sent.getString("responseStatus"))
+            assertEquals("SELF", sent.getString("callsign"))
+            assertEquals(vehicle, sent.getString("vehicleUid"))
+            assertEquals("Responding", runtime.involvement(runtime.visibleIncidents().single()))
+        } finally { runtime.close() }
+    }
+
+    @Test fun bloodhoundStartsEvenWhenRespondingCannotBeRecorded() {
+        val cad = FakeCad(writable("one"))
+        val services = Services().apply { route = cad::handle }
+        val runtime = runtime(services)
+        try {
+            runtime.mapAction("one", C.ACTION_BLOODHOUND)
+            runtime.awaitIdle()
+            runtime.awaitIdle()
+            assertEquals(1, services.maps.size)
+            assertEquals(0, cad.vehicleInserts)
+            assertTrue(runtime.writeError!!.contains("vehicle UID"))
+            assertNull(runtime.lastError)
+            runtime.configure("uid", "", "11111111-1111-1111-1111-111111111111")
+            runtime.awaitIdle()
+            cad.applyVehicleResponse = false
+            runtime.mapAction("one", C.ACTION_BLOODHOUND)
+            runtime.awaitIdle()
+            runtime.awaitIdle()
+            assertEquals(2, services.maps.size)
+            assertEquals(1, cad.vehicleInserts)
+            assertTrue(runtime.writeError!!.contains("not marked responding"))
+            assertTrue(runtime.writeError!!.contains("did not record"))
+            assertNull(runtime.lastError)
         } finally { runtime.close() }
     }
 

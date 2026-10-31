@@ -160,9 +160,9 @@ class CanonicalIncidentTest {
             assertTrue(MainUiSchemaContractValidator.validate(list, strictV1CardTypesOnly = true) is ContractValidationResult.Ok)
             ui.invoke("takcad.incident.open", Bundle().apply { putString("incidentId", "mine") })
             val details = ui.schema()
-            assertEquals(listOf("takcad.bloodhound", "takcad.target"),
-                details.cards.take(2).map { it.cardId })
-            assertEquals(listOf("\uD83D\uDC3E", "\u2316"), details.cards.take(2).map { it.title })
+            assertEquals(listOf("takcad.bloodhound", "takcad.target", "takcad.note.add"),
+                details.cards.take(3).map { it.cardId })
+            assertEquals(listOf("\uD83D\uDC3E", "\u2316", "\u270E"), details.cards.take(3).map { it.title })
             assertEquals("Z mine\nACTIVE", details.cards.single { it.cardId == "incident.detail.0" }.subtitle)
             assertFalse(details.cards.any { it.cardId in setOf("limits", "takcad.incident.accept", "takcad.incident.decline") })
             runtime.accept("mine")
