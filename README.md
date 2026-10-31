@@ -52,10 +52,13 @@ rather than producing an invalid or silently downgraded CI version.
   Hosted rendering requires the matching additive WearTAK icon-action renderer.
   Server choices hide their semantic card titles, removing bullet separators
   without altering server names. Incident lists omit the redundant ACTIVE status,
-  retaining Requested/Responding involvement. The redundant ACTIVE identity
-  token is also omitted from details without changing stored status/filtering.
+  retaining Requested/Responding involvement. The list pins the incident whose
+  UID is reported as the plugin-owned Bloodhound target under **Active Incident**;
+  all remaining incidents appear once under **Other Incidents**. CAD ACTIVE status
+  and current detail selection do not determine this grouping. Incident detail
+  omits the identity/title block without changing stored content or list filtering.
   Address, Notes, Responders, and Summary use bold headings, normal-weight values,
-  and alphabetical order after incident identity. Other fields remain present
+  and alphabetical order. Other fields remain present
   in alphabetical order; missing fields are not synthesized.
   Older text-only hosts reject presentation metadata; matching-host support must
   be advertised before sending it. Update WearTAK for this hosted UX.
@@ -377,7 +380,10 @@ is supplied by the host: use the configured vehicle UID or exact callsign match
 for involvement; never infer a vehicle UID from the watch UID/callsign.
 
 Incident list starts with **Active Server**, then compact server selector, then
-**Active Incident** and incident rows. No helper or refresh text is shown. Tapping
+**Active Incident** and **Other Incidents** sections. Only the current plugin-owned
+Bloodhound target appears in the first section; every other incident appears once
+in the second. With no active target, the first section is empty. No helper or
+refresh text is shown. Tapping
 the selector lists up to four host REST-capable TAK servers at a time with a
 checkmark on selection. Host Services v1 reports only server ID/name, so per-server
 connection status is not shown. Picking a server saves it (`cadServerId`) and

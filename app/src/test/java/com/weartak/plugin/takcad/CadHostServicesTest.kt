@@ -144,6 +144,40 @@ class CadHostServicesTest {
         } finally { runtime.close() }
     }
 
+    @Test fun bloodhoundTargetLeadsActiveIncidentSectionAndIsNotDuplicatedUnderOtherIncidents() {
+        val services = Services().apply {
+            body = JSONArray().put(record("one")).put(record("two")).toString()
+            mapActions = listOf(C.ACTION_BLOODHOUND, C.ACTION_TARGET, CadHostServices.ACTION_STOP_BLOODHOUND)
+            activeBloodhoundUid = "two"
+        }
+        val runtime = runtime(services)
+        try {
+            val ui = HostedResponderUi(runtime).apply { setHostPresentationVersion(1) }
+            fun listCards() = ui.schema().cards
+            var cards = listCards()
+            val activeHeader = cards.indexOfFirst { it.cardId == "incidents.header" && it.title == "Active Incident" }
+            val activeRow = cards.indexOfFirst { it.cardId == "takcad.incident.open.active" }
+            val otherHeader = cards.indexOfFirst { it.cardId == "incidents.other.header" }
+            assertTrue(activeHeader >= 0 && activeHeader < activeRow && activeRow < otherHeader)
+            assertEquals("two", JSONObject(cards[activeRow].content.getString("actionArgsJson")!!)
+                .getString("incidentId"))
+            val otherRows = cards.filter { it.cardId.startsWith("takcad.incident.open") &&
+                it.cardId != "takcad.incident.open.active" }
+            assertEquals(listOf("one"), otherRows.map {
+                JSONObject(it.content.getString("actionArgsJson")!!).getString("incidentId")
+            })
+
+            services.activeBloodhoundUid = null
+            runtime.refreshMapState()
+            runtime.awaitIdle()
+            cards = listCards()
+            assertFalse(cards.any { it.cardId == "takcad.incident.open.active" })
+            assertEquals(listOf("one", "two"), cards.filter {
+                it.cardId.startsWith("takcad.incident.open")
+            }.map { JSONObject(it.content.getString("actionArgsJson")!!).getString("incidentId") })
+        } finally { runtime.close() }
+    }
+
     @Test fun oldHostDisablesExtensionActionsAndMakesNoNetworkRequest() {
         val runtime = runtime(null)
         try {

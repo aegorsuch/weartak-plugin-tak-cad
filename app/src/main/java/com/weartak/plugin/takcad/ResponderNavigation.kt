@@ -5,7 +5,11 @@ package com.weartak.plugin.takcad
 class ResponderNavigation(
     private val store: IncidentStore,
     private val list: () -> List<Incident> = store::snapshot,
+    private val pageableIncidents: (List<Incident>) -> List<Incident> = { it },
+    private val incidentPageSize: Int = 1,
 ) {
+    init { require(incidentPageSize > 0) { "Incident page size must be positive" } }
+
     private var selectedId: String? = null
     private var incidentOffset = 0
     private var responderOffset = 0
@@ -24,7 +28,9 @@ class ResponderNavigation(
         val incidents = list()
         val incident = incidents.firstOrNull { it.ask.id == selectedId }
         if (incident == null) selectedId = null
-        incidentOffset = incidentOffset.coerceIn(0, (incidents.size - 1).coerceAtLeast(0))
+        val pageCount = pageableIncidents(incidents).size
+        val lastPageOffset = if (pageCount == 0) 0 else ((pageCount - 1) / incidentPageSize) * incidentPageSize
+        incidentOffset = incidentOffset.coerceIn(0, lastPageOffset)
         responderOffset = responderOffset.coerceIn(0, ((incident?.responders?.size ?: 0) - 1).coerceAtLeast(0))
         if (routeJson != incident?.ownRoute?.json) {
             routeJson = incident?.ownRoute?.json
@@ -52,7 +58,7 @@ class ResponderNavigation(
     @Synchronized fun pageIncidents(delta: Int) {
         val current = snapshot()
         val next = current.incidentOffset.toLong() + delta
-        require(next in 0 until current.incidents.size.toLong()) { "Incident page unavailable" }
+        require(next in 0 until pageableIncidents(current.incidents).size.toLong()) { "Incident page unavailable" }
         incidentOffset = next.toInt()
     }
 

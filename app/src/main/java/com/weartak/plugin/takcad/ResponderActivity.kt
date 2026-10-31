@@ -117,7 +117,8 @@ class ResponderActivity : Activity() {
                 render(resetScroll = true)
             }
             text("Active Incident", 20f)
-            for (incident in incidents) {
+            val activeBloodhoundIncident = incidents.firstOrNull { runtime.isBloodhounding(it.ask.id) }
+            fun incidentButton(incident: Incident) {
                 val state = if (incident.ask.canonical == null) stateLabel(incident.participation) else
                     runtime.involvement(incident)
                 button(listOfNotNull(incident.ask.title, state).joinToString("\n")) {
@@ -128,6 +129,9 @@ class ResponderActivity : Activity() {
                     render(resetScroll = true)
                 }
             }
+            activeBloodhoundIncident?.let(::incidentButton)
+            text("Other Incidents", 20f)
+            incidents.filterNot { it.ask.id == activeBloodhoundIncident?.ask?.id }.forEach(::incidentButton)
             button(getString(R.string.configuration)) { setup() }
             return
         }

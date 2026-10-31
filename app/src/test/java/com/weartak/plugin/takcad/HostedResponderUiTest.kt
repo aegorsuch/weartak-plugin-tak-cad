@@ -69,8 +69,8 @@ class HostedResponderUiTest {
         assertFalse(schema.cards.any { it.title == "Navigation" || it.title == "\uD83D\uDC3E" })
         assertTrue(schema.cards.any { it.subtitle?.contains("Existing note") == true })
         val fields = schema.cards.filter { it.cardId.startsWith("incident.detail.") }
-        assertEquals(listOf("Active Incident", "Address", "Notes", "Responders", "Summary"), fields.map { it.title })
-        assertEquals("Exercise", fields.first().subtitle)
+        assertEquals(listOf("Address", "Notes", "Responders", "Summary"), fields.map { it.title })
+        assertTrue(fields.none { it.subtitle.orEmpty().contains("Exercise") })
         assertTrue(fields.none { it.subtitle.orEmpty().lines().contains("ACTIVE") })
         assertEquals("Training road", fields.single { it.title == "Address" }.subtitle)
         assertTrue(MainUiSchemaContractValidator.validate(schema, strictV1CardTypesOnly = true) is ContractValidationResult.Ok)
@@ -119,8 +119,9 @@ class HostedResponderUiTest {
         assertTrue(details.cards.any { it.cardId == "takcad.incident.accept" })
         assertFalse(details.cards.single { it.cardId == "takcad.incident.accept" }.content.getBoolean("enabled"))
         val detailCards = details.cards.filter { it.cardType == "STATUS" }
-        assertEquals("Active Incident", detailCards.first().title)
-        assertTrue(detailCards.any { it.subtitle!!.contains(ASK.title) })
+        assertEquals(listOf("Address", "Summary"), detailCards.map { it.title })
+        assertFalse(detailCards.any { it.subtitle.orEmpty().contains(ASK.title) })
+        assertFalse(detailCards.any { it.title == "Active Incident" })
         assertEquals(detailCards.size, detailCards.map { it.title }.distinct().size)
         assertFalse(details.cards.any { it.cardId.startsWith("takcad.details.") })
         assertFalse(details.toString().contains("secret-must-not"))
@@ -130,10 +131,12 @@ class HostedResponderUiTest {
 
     @Test fun emptyListHasServerDropdownFirstAndNoHelperText() {
         val schema = ui.schema()
-        assertEquals(listOf("takcad.server.choose", "incidents.header"), schema.cards.map { it.cardId })
+        assertEquals(listOf("takcad.server.choose", "incidents.header", "incidents.other.header"),
+            schema.cards.map { it.cardId })
         assertEquals("Active Server", schema.cards.first().title)
         assertEquals("Select \u25BE", schema.cards.first().content.getString("actionLabel"))
-        assertEquals("Active Incident", schema.cards.last().title)
+        assertEquals("Active Incident", schema.cards[1].title)
+        assertEquals("Other Incidents", schema.cards.last().title)
         assertFalse(schema.cards.any { it.cardId == "takcad.incidents.refresh" })
         assertFalse(schema.toString().contains("No incidents"))
         assertFalse(schema.toString().contains("requires host integration"))

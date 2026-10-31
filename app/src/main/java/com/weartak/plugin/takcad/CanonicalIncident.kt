@@ -108,8 +108,6 @@ fun Incident.detailSections(legacyStatus: String? = null): List<Pair<String, Str
             canonical?.type?.takeIf(String::isNotBlank)?.let(::add)
             if (canonical == null) legacyStatus?.takeIf(String::isNotBlank)?.let(::add)
         }.distinct().joinToString("\n")
-        if (identityValues.isNotBlank()) add("Active Incident" to identityValues)
-
         val summary = (canonical?.details?.takeIf(String::isNotBlank) ?: ask.summary)
             .takeIf { it.isNotBlank() && it !in identityValues.lines() }
         summary?.let { add("Summary" to it) }
@@ -146,7 +144,7 @@ fun Incident.detailSections(legacyStatus: String? = null): List<Pair<String, Str
             }.distinct()
             if (notes.isNotEmpty()) add("Notes" to notes.joinToString("\n"))
         }
-    }.sortedWith(compareBy<Pair<String, String>> { it.first != "Active Incident" }.thenBy { it.first })
+    }.sortedBy { it.first }
 }
 
 private fun JSONObject.text(key: String, limit: Int): String =
