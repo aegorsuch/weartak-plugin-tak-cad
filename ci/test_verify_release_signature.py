@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from verify_release_signature import (
     EXPECTED_CERTIFICATE_SHA256,
+    release_asset_filename,
     verify_release_signature,
 )
 
@@ -18,14 +19,20 @@ class ReleaseSignatureTest(unittest.TestCase):
         root = Path(self.temporary_directory.name)
         self.apk = root / "app-release.apk"
         self.apksigner = root / "apksigner"
+        self.aapt = root / "aapt"
         self.apk.touch()
         self.apksigner.touch()
+        self.aapt.touch()
+
+    @staticmethod
+    def verified_signer():
+        return subprocess.CompletedProcess(
+            [], 0, f"Signer #1 certificate SHA-256 digest: {EXPECTED_CERTIFICATE_SHA256}\n", "",
+        )
 
     @patch("verify_release_signature.subprocess.run")
     def test_accepts_wear_tak_production_certificate(self, run):
-        run.return_value = subprocess.CompletedProcess(
-            [], 0, f"Signer #1 certificate SHA-256 digest: {EXPECTED_CERTIFICATE_SHA256}\n", "",
-        )
+        run.return_value = self.verified_signer()
         self.assertEqual(
             verify_release_signature(self.apk, self.apksigner),
             EXPECTED_CERTIFICATE_SHA256,
@@ -39,21 +46,47 @@ class ReleaseSignatureTest(unittest.TestCase):
     def test_retains_only_verified_apk_and_checksum(self, run):
         contents = b"signed production apk"
         self.apk.write_bytes(contents)
-        run.return_value = subprocess.CompletedProcess(
-            [], 0, f"Signer #1 certificate SHA-256 digest: {EXPECTED_CERTIFICATE_SHA256}\n", "",
-        )
+        run.side_effect = [
+            self.verified_signer(),
+            subprocess.CompletedProcess(
+                [], 0, "package: name='com.weartak.plugin.takcad' versionName='5.8.4-p25+abc123'\n", "",
+            ),
+        ]
         artifact_directory = Path(self.temporary_directory.name) / "dist"
-        verify_release_signature(self.apk, self.apksigner, artifact_directory)
+        verify_release_signature(
+            self.apk, self.apksigner, artifact_directory, pipeline_iid=25,
+        )
+        filename = "WearTAK-Plugin-TAK-CAD-5.8.4-p25.apk"
         self.assertEqual(
             sorted(path.name for path in artifact_directory.iterdir()),
-            ["SHA256SUMS", "TAK-CAD-production.apk"],
+            ["SHA256SUMS", filename],
         )
-        artifact = artifact_directory / "TAK-CAD-production.apk"
+        artifact = artifact_directory / filename
         self.assertEqual(artifact.read_bytes(), contents)
         self.assertEqual(
             (artifact_directory / "SHA256SUMS").read_text(),
-            f"{hashlib.sha256(contents).hexdigest()}  TAK-CAD-production.apk\n",
+            f"{hashlib.sha256(contents).hexdigest()}  {filename}\n",
         )
+
+    def test_asset_filename_uses_plugin_version_and_pipeline(self):
+        self.assertEqual(
+            release_asset_filename("TAK-CAD", "5.8.4-p25+abc123", 25),
+            "WearTAK-Plugin-TAK-CAD-5.8.4-p25.apk",
+        )
+
+    def test_asset_filename_rejects_mismatched_pipeline(self):
+        with self.assertRaisesRegex(ValueError, "does not match"):
+            release_asset_filename("TAK-CAD", "5.8.4-p24+abc123", 25)
+
+    def test_asset_filename_requires_positive_pipeline_iid(self):
+        with self.assertRaisesRegex(ValueError, "positive integer"):
+            release_asset_filename("TAK-CAD", "5.8.4", 0)
+
+    def test_asset_filename_rejects_invalid_plugin_and_version(self):
+        with self.assertRaisesRegex(ValueError, "Invalid plugin name"):
+            release_asset_filename("../TAK-CAD", "5.8.4-p25", 25)
+        with self.assertRaisesRegex(ValueError, "Invalid APK version"):
+            release_asset_filename("TAK-CAD", "../5.8.4-p25", 25)
 
     @patch("verify_release_signature.subprocess.run")
     def test_rejects_different_certificate_without_retaining_apk(self, run):
@@ -116,7 +149,7 @@ class ReleaseSignatureTest(unittest.TestCase):
         artifact_source = pipeline.index("app/build/outputs/apk/release/app-release.apk", verifier)
         self.assertIn("dist", pipeline[artifact_source:pipeline.index("fi", artifact_source)])
         self.assertIn("expire_in: 30 days", pipeline)
-        self.assertIn("dist/TAK-CAD-production.apk", pipeline)
+        self.assertIn("dist/WearTAK-Plugin-TAK-CAD-*.apk", pipeline)
         self.assertIn("dist/SHA256SUMS", pipeline)
         artifact_section = pipeline[pipeline.index("  artifacts:", pipeline.index("forge-verify:")):]
         self.assertNotIn("app/build/outputs/apk/debug", artifact_section)

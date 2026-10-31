@@ -103,7 +103,7 @@ forge-verify:
       - app/build/test-results/
       - .ci-sdk/build/reports/
       - .ci-sdk/build/test-results/
-      - dist/TAK-CAD-production.apk
+      - dist/WearTAK-Plugin-TAK-CAD-*.apk
       - dist/SHA256SUMS
     reports:
       junit:

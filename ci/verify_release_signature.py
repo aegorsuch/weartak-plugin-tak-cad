@@ -1,6 +1,7 @@
 """Verify a release APK is signed by WearTAK's trusted production certificate."""
 
 import hashlib
+import os
 import re
 import shutil
 import subprocess
@@ -9,10 +10,36 @@ from pathlib import Path
 
 EXPECTED_CERTIFICATE_SHA256 = "1579b600cd84e619e76a91c2db6b031938c999bc2aad926b9a51ec2b166d348d"
 CERTIFICATE_DIGEST = re.compile(r"certificate SHA-256 digest:\s*([0-9a-fA-F]{64})")
-ARTIFACT_FILENAME = "TAK-CAD-production.apk"
+VERSION_NAME = re.compile(r"versionName='([^']+)'")
+PACKAGE_NAME = re.compile(r"package: name='([^']+)'")
+PLUGIN_NAME = "TAK-CAD"
+APPLICATION_ID = "com.weartak.plugin.takcad"
 
 
-def verify_release_signature(apk, apksigner, artifact_directory=None):
+def release_asset_filename(plugin_name, version_name, pipeline_iid):
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]*", plugin_name):
+        raise ValueError(f"Invalid plugin name: {plugin_name}")
+    pipeline_iid = str(pipeline_iid)
+    if not re.fullmatch(r"[1-9][0-9]*", pipeline_iid):
+        raise ValueError("CI_PIPELINE_IID must be a positive integer.")
+
+    if not isinstance(version_name, str):
+        raise ValueError(f"Invalid APK version name: {version_name}")
+    version = version_name.split("+", 1)[0]
+    pipeline_suffix = re.fullmatch(r"(.+)-p([1-9][0-9]*)", version)
+    if pipeline_suffix:
+        if pipeline_suffix.group(2) != pipeline_iid:
+            raise ValueError(
+                f"APK pipeline IID {pipeline_suffix.group(2)} does not match "
+                f"CI_PIPELINE_IID {pipeline_iid}."
+            )
+        version = pipeline_suffix.group(1)
+    if not re.fullmatch(r"[0-9A-Za-z][0-9A-Za-z._-]*", version):
+        raise ValueError(f"Invalid APK version name: {version_name}")
+    return f"WearTAK-Plugin-{plugin_name}-{version}-p{pipeline_iid}.apk"
+
+
+def verify_release_signature(apk, apksigner, artifact_directory=None, pipeline_iid=None):
     apk = Path(apk)
     apksigner = Path(apksigner)
     if not apk.is_file():
@@ -40,19 +67,47 @@ def verify_release_signature(apk, apksigner, artifact_directory=None):
             f"expected {EXPECTED_CERTIFICATE_SHA256}."
         )
     if artifact_directory is not None:
+        if pipeline_iid is None:
+            pipeline_iid = os.environ.get("CI_PIPELINE_IID")
+        filename = release_asset_filename(
+            PLUGIN_NAME,
+            _read_version_name(apk, apksigner.with_name("aapt")),
+            pipeline_iid,
+        )
         artifact_directory = Path(artifact_directory)
         artifact_directory.mkdir(parents=True, exist_ok=False)
-        artifact = artifact_directory / ARTIFACT_FILENAME
+        artifact = artifact_directory / filename
         shutil.copyfile(apk, artifact)
         digest = hashlib.sha256()
         with artifact.open("rb") as signed_apk:
             for chunk in iter(lambda: signed_apk.read(1024 * 1024), b""):
                 digest.update(chunk)
         (artifact_directory / "SHA256SUMS").write_text(
-            f"{digest.hexdigest()}  {ARTIFACT_FILENAME}\n",
+            f"{digest.hexdigest()}  {filename}\n",
             encoding="ascii",
         )
     return EXPECTED_CERTIFICATE_SHA256
+
+
+def _read_version_name(apk, aapt):
+    if not aapt.is_file():
+        raise FileNotFoundError(f"Android aapt not found: {aapt}")
+    result = subprocess.run(
+        [str(aapt), "dump", "badging", str(apk)],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=60,
+    )
+    if result.returncode:
+        raise RuntimeError("Could not read APK version metadata.")
+    package = PACKAGE_NAME.search(result.stdout)
+    if not package or package.group(1) != APPLICATION_ID:
+        raise RuntimeError("APK package name does not match TAK-CAD.")
+    match = VERSION_NAME.search(result.stdout)
+    if not match:
+        raise RuntimeError("APK has no readable versionName.")
+    return match.group(1)
 
 
 def main(argv=None):
@@ -70,6 +125,6 @@ def main(argv=None):
 if __name__ == "__main__":
     try:
         main()
-    except (FileNotFoundError, RuntimeError, subprocess.TimeoutExpired) as error:
+    except (FileNotFoundError, RuntimeError, ValueError, subprocess.TimeoutExpired) as error:
         print(f"Release signature verification failed: {error}", file=sys.stderr)
         sys.exit(1)
