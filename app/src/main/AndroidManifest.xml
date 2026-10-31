@@ -17,6 +17,9 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity android:name=".NoteActivity" android:exported="false"
+            android:taskAffinity="com.weartak.plugin.takcad.note" android:excludeFromRecents="true"
+            android:windowSoftInputMode="stateVisible|adjustResize" />
         <service android:name=".CadService" android:exported="true"
             android:permission="com.weartak.plugin.permission.BIND_PLUGIN">
             <intent-filter>

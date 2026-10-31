@@ -41,7 +41,18 @@ rather than producing an invalid or silently downgraded CI version.
   means activation requested, not arrival or route completion. Existing ACTION
   presentation is functional text: the host extension adds no per-action icon
   renderer. Older hosts disable these controls and show an update-required status.
-- Canonical response/notes writes remain unsupported; no server write is made.
+- Canonical detail supports **Add note** with Wear keyboard/voice input and
+  **Status** changes to Active, Cancelled, or Completed with confirmation.
+  Notes use the host-reported watch callsign and preserve drafts on failure.
+  Both writes refresh the incident. Status writes fetch the current record,
+  change only its status, and verify the result after updating.
+  The host HTTP bridge must support PUT/POST JSON bodies with the exact
+  `application/json` content type. Hosted note entry additionally requires
+  the host to bind plugins with `BIND_ALLOW_ACTIVITY_STARTS`; without it,
+  Android can block opening the note activity.
+  The server's `updateIncident` currently clears `personnelResponding` and
+  `firstResponderArrivalTime` even when the plugin sends them unchanged.
+  Canonical response writes remain unsupported.
   Canonical incidents never emit legacy response CoT. Existing host forwarding
   must explicitly include the canonical detail element; legacy `how` filtering
   alone will not deliver it. No operational compatibility is claimed.

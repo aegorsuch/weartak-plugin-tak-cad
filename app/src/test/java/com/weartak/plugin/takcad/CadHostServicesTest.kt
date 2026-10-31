@@ -46,6 +46,7 @@ class CadHostServicesTest {
         val maps = mutableListOf<Bundle>()
         val threads = mutableListOf<Thread>()
         var onRequest: () -> Unit = {}
+        var route: ((Bundle) -> String)? = null
         override fun getCapabilities(): Bundle {
             threads += Thread.currentThread()
             return C.result(C.OK).apply {
@@ -64,7 +65,7 @@ class CadHostServicesTest {
             return C.result(responseStatus).apply {
                 putInt(C.KEY_HTTP_STATUS, code)
                 putString(C.KEY_SERVER_ID, returnedServer ?: request.getString(C.KEY_SERVER_ID))
-                putString(C.KEY_BODY, body)
+                putString(C.KEY_BODY, route?.invoke(request) ?: body)
             }
         }
         override fun requestMapAction(request: Bundle): Bundle {
@@ -397,6 +398,163 @@ class CadHostServicesTest {
             runtime.awaitIdle()
             assertTrue(runtime.store.snapshot().isEmpty())
             assertFalse(runtime.supportsCad())
+        } finally { runtime.close() }
+    }
+
+    /** Minimal CAD server: getIncidents/getIncident read [records]; insertNote and updateIncident mutate them. */
+    private class FakeCad(vararg initial: JSONObject) {
+        val records = initial.associateBy { it.getString("uid") }.toMutableMap()
+        var applyUpdates = true
+        var noteResponse: String? = null
+        fun handle(request: Bundle): String {
+            val query = request.getString(C.KEY_QUERY).orEmpty()
+            val uid = query.substringAfter("uid=", "")
+            return when {
+                query == "fn=getIncidents" -> JSONArray(records.values.map { JSONObject(it.toString()) }).toString()
+                query.startsWith("fn=getIncident&") -> records.getValue(uid).toString()
+                query == "fn=insertNote" -> noteResponse ?: run {
+                    val note = JSONObject(request.getString(C.KEY_BODY)!!)
+                    records.getValue(note.getString("incidentUid")).getJSONArray("notes")
+                        .put(JSONObject(note.toString()).put("uid", "00000000-0000-0000-0000-000000000001"))
+                    """{"success":true,"result":"00000000-0000-0000-0000-000000000001"}"""
+                }
+                query.startsWith("fn=updateIncident&") -> {
+                    if (applyUpdates) records[uid] = JSONObject(request.getString(C.KEY_BODY)!!)
+                    """{"name":"TakCadServerPlugin"}"""
+                }
+                else -> error("Unexpected CAD query $query")
+            }
+        }
+    }
+
+    private fun writable(id: String) = record(id).put("notes", JSONArray())
+        .put("vehicleUidsRequested", JSONArray().put("veh-1")).put("details", "keep me")
+
+    @Test fun addNoteUsesPutBodyWithCallsignAndRefreshesThenClearsDraft() {
+        val cad = FakeCad(writable("one"))
+        val services = Services().apply { route = cad::handle }
+        val runtime = runtime(services)
+        try {
+            services.requests.clear()
+            runtime.addNote("one", "  Smoke visible from north  ")
+            runtime.awaitIdle()
+            assertNull(runtime.writeError)
+            assertEquals("Note added", runtime.writeNotice)
+            assertEquals("", runtime.noteDraft("one"))
+            val put = services.requests.first()
+            assertEquals("PUT", put.getString(C.KEY_METHOD))
+            assertEquals("/Marti/api/plugins/tak.server.plugins.TakCadServerPlugin/submit/result", put.getString(C.KEY_PATH))
+            assertEquals("fn=insertNote", put.getString(C.KEY_QUERY))
+            assertEquals("application/json", put.getString(C.KEY_CONTENT_TYPE))
+            val note = JSONObject(put.getString(C.KEY_BODY)!!)
+            assertEquals(setOf("incidentUid", "timestamp", "creator", "info"), note.keys().asSequence().toSet())
+            assertEquals("one", note.getString("incidentUid"))
+            assertEquals("SELF", note.getString("creator"))
+            assertEquals("Smoke visible from north", note.getString("info"))
+            java.time.Instant.parse(note.getString("timestamp"))
+            assertEquals("fn=getIncidents", services.requests.last().getString(C.KEY_QUERY))
+            assertEquals("Smoke visible from north", runtime.visibleIncidents().single().ask.canonical!!.notes.single().info)
+        } finally { runtime.close() }
+    }
+
+    @Test fun rejectedOrFailedNoteKeepsDraftAndErrorSurvivesPolling() {
+        val cad = FakeCad(writable("one"))
+        val services = Services().apply { route = cad::handle }
+        val runtime = runtime(services)
+        try {
+            cad.noteResponse = """{"success":false,"errors":["Incident closed"]}"""
+            runtime.addNote("one", "Keep this")
+            runtime.awaitIdle()
+            assertEquals("Keep this", runtime.noteDraft("one"))
+            assertTrue(runtime.writeError!!.contains("draft kept"))
+            assertTrue(runtime.writeError!!.contains("Incident closed"))
+            runtime.refreshIncidents()
+            runtime.awaitIdle()
+            assertNull(runtime.lastError)
+            assertNotNull(runtime.writeError)
+            services.code = 400
+            cad.noteResponse = "Result data from plugin was null"
+            runtime.addNote("one", "Keep this too")
+            runtime.awaitIdle()
+            assertEquals("Keep this too", runtime.noteDraft("one"))
+            assertTrue(runtime.writeError!!.contains("HTTP 400"))
+            services.code = 200
+            cad.noteResponse = null
+            runtime.addNote("one", "   ")
+            runtime.awaitIdle()
+            assertTrue(runtime.writeError!!.contains("empty"))
+            assertTrue(cad.records.getValue("one").getJSONArray("notes").length() == 0)
+        } finally { runtime.close() }
+    }
+
+    @Test fun setStatusSendsFreshRecordWithOnlyStatusChangedAndVerifies() {
+        val cad = FakeCad(writable("one"), writable("two"))
+        val services = Services().apply { route = cad::handle }
+        val runtime = runtime(services)
+        try {
+            cad.records.getValue("one").put("details", "changed on server").put("extraField", 7)
+            services.requests.clear()
+            runtime.setStatus("one", CadStatus.COMPLETED)
+            runtime.awaitIdle()
+            assertNull(runtime.writeError)
+            assertEquals("Status set to Completed", runtime.writeNotice)
+            assertEquals(listOf("fn=getIncident&uid=one", "fn=updateIncident&uid=one", "fn=getIncident&uid=one", "fn=getIncidents"),
+                services.requests.map { it.getString(C.KEY_QUERY) })
+            val post = services.requests[1]
+            assertEquals("POST", post.getString(C.KEY_METHOD))
+            assertEquals("/Marti/api/plugins/tak.server.plugins.TakCadServerPlugin/submit", post.getString(C.KEY_PATH))
+            val sent = JSONObject(post.getString(C.KEY_BODY)!!)
+            val expected = writable("one").put("details", "changed on server").put("extraField", 7).put("status", "COMPLETED")
+            assertEquals(expected.toString(), sent.toString())
+            assertEquals(listOf("two"), runtime.visibleIncidents().map { it.ask.id })
+        } finally { runtime.close() }
+    }
+
+    @Test fun ignoredStatusUpdateIsReportedAsFailure() {
+        val cad = FakeCad(writable("one")).apply { applyUpdates = false }
+        val services = Services().apply { route = cad::handle }
+        val runtime = runtime(services)
+        try {
+            runtime.setStatus("one", CadStatus.CANCELLED)
+            runtime.awaitIdle()
+            assertTrue(runtime.writeError!!.contains("CAD did not apply status change"))
+            assertNull(runtime.writeNotice)
+            assertEquals("one", runtime.visibleIncidents().single().ask.id)
+            assertThrows(IllegalArgumentException::class.java) { runtime.setStatus("one", "OPEN") }
+        } finally { runtime.close() }
+    }
+
+    @Test fun hostedStatusChangeRequiresConfirmationAndNoteActionLaunchesEntry() {
+        val cad = FakeCad(writable("one"))
+        val services = Services().apply { route = cad::handle }
+        val runtime = runtime(services)
+        val launched = mutableListOf<String>()
+        try {
+            val ui = HostedResponderUi(runtime) { launched += it }
+            val args = Bundle().apply { putString("incidentId", "one") }
+            ui.invoke("takcad.incident.open", args)
+            val chooser = ui.schema().cards.single { it.cardId == "takcad.status.choose" }
+            assertEquals("Status", chooser.title)
+            assertTrue(chooser.content.keySet().any { chooser.content.get(it) == "Active \u25BE" })
+            ui.invoke("takcad.note.add", args)
+            assertEquals(listOf("one"), launched)
+            ui.invoke("takcad.status.choose", args)
+            var cards = ui.schema().cards
+            assertFalse(cards.single { it.cardId == "takcad.status.active" }.content.getBoolean("enabled"))
+            assertThrows(IllegalArgumentException::class.java) { ui.invoke("takcad.status.confirm", args) }
+            ui.invoke("takcad.status.completed", args)
+            cards = ui.schema().cards
+            assertTrue(cards.single { it.cardId == "takcad.status.confirm.prompt" }.title == "Confirm status")
+            ui.invoke("takcad.status.cancel", args)
+            ui.invoke("takcad.status.cancel", args)
+            assertTrue(ui.schema().cards.any { it.cardId == "takcad.status.choose" })
+            assertEquals("ACTIVE", cad.records.getValue("one").getString("status"))
+            ui.invoke("takcad.status.choose", args)
+            ui.invoke("takcad.status.completed", args)
+            ui.invoke("takcad.status.confirm", args)
+            runtime.awaitIdle()
+            assertEquals("COMPLETED", cad.records.getValue("one").getString("status"))
+            assertEquals("Status set to Completed", ui.schema().cards.single { it.cardId == "takcad.write" }.subtitle)
         } finally { runtime.close() }
     }
 
