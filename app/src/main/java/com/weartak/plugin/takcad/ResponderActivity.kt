@@ -127,12 +127,15 @@ class ResponderActivity : Activity() {
             render()
             return
         }
-        if (incident.ask.canonical != null && incident.ask.position != null) {
-            mapActions(
-                bloodhound = { runtime.mapAction(incident.ask.id, C.ACTION_BLOODHOUND) },
-                target = { runtime.mapAction(incident.ask.id, C.ACTION_TARGET) },
+        if (incident.ask.canonical != null) {
+            val hasPosition = incident.ask.position != null
+            actionRow(
+                bloodhound = if (hasPosition) ({ runtime.mapAction(incident.ask.id, C.ACTION_BLOODHOUND) }) else null,
+                target = if (hasPosition) ({ runtime.mapAction(incident.ask.id, C.ACTION_TARGET) }) else null,
+                note = { startActivity(NoteActivity.intent(this, incident.ask.id)) },
                 bloodhoundEnabled = runtime.canMapAction(C.ACTION_BLOODHOUND),
                 targetEnabled = runtime.canMapAction(C.ACTION_TARGET),
+                noteEnabled = runtime.canWrite(),
             )
         }
         incident.detailSections(if (incident.ask.canonical == null) stateLabel(incident.participation) else null)
@@ -174,9 +177,6 @@ class ResponderActivity : Activity() {
 
     private fun writeControls(incident: Incident, canonical: CanonicalIncident) {
         writeResult()?.let { text(it) }
-        button(getString(R.string.add_note), runtime.canWrite()) {
-            startActivity(NoteActivity.intent(this, incident.ask.id))
-        }
         button("${getString(R.string.status_choose, CadStatus.label(canonical.status))} \u25BE", runtime.canWrite()) {
             val choices = CadStatus.VALUES.filter { it != canonical.status }
             AlertDialog.Builder(this)
@@ -265,19 +265,23 @@ class ResponderActivity : Activity() {
         })
     }
 
-    private fun mapActions(
-        bloodhound: () -> Unit,
-        target: () -> Unit,
+    private fun actionRow(
+        bloodhound: (() -> Unit)?,
+        target: (() -> Unit)?,
+        note: () -> Unit,
         bloodhoundEnabled: Boolean,
         targetEnabled: Boolean,
+        noteEnabled: Boolean,
     ) {
         content.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             val actionSize = dp(48)
-            addView(mapAction(R.drawable.ic_bloodhound, "Bloodhound", bloodhoundEnabled, bloodhound),
+            fun add(icon: Int, description: String, enabled: Boolean, action: () -> Unit) = addView(
+                mapAction(icon, description, enabled, action),
                 LinearLayout.LayoutParams(actionSize, actionSize).apply { weight = 1f })
-            addView(mapAction(R.drawable.ic_target, "Target", targetEnabled, target),
-                LinearLayout.LayoutParams(actionSize, actionSize).apply { weight = 1f })
+            if (bloodhound != null) add(R.drawable.ic_bloodhound, "Bloodhound", bloodhoundEnabled, bloodhound)
+            if (target != null) add(R.drawable.ic_target, "Target", targetEnabled, target)
+            add(R.drawable.ic_note, getString(R.string.add_note), noteEnabled, note)
         })
     }
 

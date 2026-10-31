@@ -30,6 +30,7 @@ class CadRuntime(
         internal const val CAD_MAX_BACKOFF_MS = 300_000L
         private const val SERVER_PREFERENCE = "cadServerId"
         private const val NOTE_DRAFT_PREFIX = "noteDraft."
+        private val RESPONDING_STATES = setOf("IN_ROUTE", "ON_SCENE")
     }
 
     private val settings = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
@@ -249,6 +250,37 @@ class CadRuntime(
                 check(services === hostServices) { "Host connection changed" }
                 message = if (action == C.ACTION_BLOODHOUND) "Bloodhound activation requested" else "Map focus requested"
             }
+            if (action == C.ACTION_BLOODHOUND && incident.ask.canonical != null) markResponding(id)
+        }
+    }
+
+    /**
+     * Same call as the ATAK plugin: insertVehicleResponse with IN_ROUTE, which the server records as a vehicle
+     * response (shown as "Responding"). Skipped if already responding; the write is verified by re-reading.
+     */
+    private fun markResponding(id: String) {
+        write("Bloodhound started; not marked responding", rethrow = false) { epoch, services, serverId ->
+            writableIncident(id, serverId)
+            val vehicleUid = responderVehicleUid()
+            require(vehicleUid.isNotBlank()) { "set vehicle UID in setup" }
+            val vehicleId = try { java.util.UUID.fromString(vehicleUid).toString() } catch (e: IllegalArgumentException) {
+                throw IllegalArgumentException("vehicle UID in setup is not a UUID")
+            }
+            refreshIdentity()
+            val responder = callsign.trim()
+            check(responder.isNotEmpty()) { "watch callsign unavailable" }
+            fun responding(json: String) = CanonicalIncident.parse(json).responses.any {
+                it.uid.equals(vehicleId, ignoreCase = true) && it.currentIncidentStatus in RESPONDING_STATES
+            }
+            if (!responding(services.incidentJson(serverId, id))) {
+                checkCurrent(epoch)
+                services.insertVehicleResponse(serverId,
+                    CadVehicleResponseDraft(java.util.UUID.randomUUID().toString(), responder, vehicleId, id))
+                checkCurrent(epoch)
+                check(responding(services.incidentJson(serverId, id))) { "CAD did not record response" }
+            }
+            writeNotice = "Marked responding"
+            refreshAfterWrite(epoch, "Marked responding")
         }
     }
 
@@ -306,7 +338,7 @@ class CadRuntime(
         }
     }
 
-    private fun write(failurePrefix: String, action: (Long, CadHostServices, String) -> Unit) {
+    private fun write(failurePrefix: String, rethrow: Boolean = true, action: (Long, CadHostServices, String) -> Unit) {
         val epoch = generation
         synchronized(gate) {
             if (writing) {
@@ -328,7 +360,7 @@ class CadRuntime(
             } catch (e: Exception) {
                 writeNotice = null
                 writeError = "$failurePrefix: ${e.message ?: e.javaClass.simpleName}"
-                throw e
+                if (!rethrow) Log.w("TakCad", writeError ?: "CAD write failed", e) else throw e
             } finally {
                 writing = false
             }

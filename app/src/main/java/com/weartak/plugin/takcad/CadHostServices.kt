@@ -10,6 +10,7 @@ import org.json.JSONObject
 data class CadServer(val id: String, val name: String)
 data class CadHostCapabilities(val servers: List<CadServer>, val mapActions: Set<String>, val takHttps: Boolean)
 data class CadNoteDraft(val incidentUid: String, val timestamp: String, val creator: String, val info: String)
+data class CadVehicleResponseDraft(val uid: String, val callsign: String, val vehicleUid: String, val incidentUid: String)
 
 object CadStatus {
     const val ACTIVE = "ACTIVE"
@@ -65,6 +66,25 @@ class CadHostServices(private val services: IWearTakHostServices) {
         check(result.optBoolean("success", false)) {
             val errors = result.optJSONArray("errors")
             "CAD rejected note${errors?.optString(0)?.takeIf { it.isNotBlank() }?.let { ": ${it.take(120)}" }.orEmpty()}"
+        }
+    }
+
+    /** Mirrors the ATAK plugin: vehicle response with IN_ROUTE, which the server maps to "Responding". */
+    fun insertVehicleResponse(serverId: String, response: CadVehicleResponseDraft) {
+        val body = JSONObject()
+            .put("uid", response.uid)
+            .put("callsign", response.callsign)
+            .put("vehicleUid", response.vehicleUid)
+            .put("incidentUid", response.incidentUid)
+            .put("responseStatus", "IN_ROUTE")
+            .toString()
+        val raw = request(serverId, "PUT", "$SUBMIT/result", "fn=insertVehicleResponse", body)
+        val result = try { JSONObject(raw) } catch (e: JSONException) {
+            throw IllegalStateException("CAD response unreadable; check incident before retrying", e)
+        }
+        check(result.optBoolean("success", false)) {
+            val errors = result.optJSONArray("errors")
+            "CAD rejected response${errors?.optString(0)?.takeIf { it.isNotBlank() }?.let { ": ${it.take(120)}" }.orEmpty()}"
         }
     }
 
