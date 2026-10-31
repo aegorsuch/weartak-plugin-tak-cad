@@ -15,26 +15,30 @@ class HostedResponderUi(
 ) {
     private companion object {
         const val SERVER_PAGE = 4
-        val STATUS_ACTIONS = CadStatus.VALUES.associateBy { "takcad.status.${it.lowercase()}" }
     }
 
     private val navigation = ResponderNavigation(runtime.store, runtime::visibleIncidents)
+    @Volatile private var presentationSupported = false
     private var routeTextPage = 0
     private var displayedRoute: String? = null
     private var displayedStep = -1
     private var serverPicker = false
     private var serverOffset = 0
-    private var statusPickerFor: String? = null
-    private var pendingStatus: String? = null
+
+    fun setHostPresentationVersion(version: Int) {
+        presentationSupported = version >= 1
+    }
 
     @Synchronized fun schema(now: Long = System.currentTimeMillis()): PluginMainUiSchemaParcel {
+        runtime.refreshMapState()
         val view = navigation.snapshot()
         val cards = mutableListOf<MainUiCardParcel>()
         fun status(id: String, title: String, text: String) {
             cards += MainUiCardParcel(MainUiCardTypes.STATUS, id, boundedText(title, 256), boundedText(text, 256))
         }
         fun action(id: String, label: String, enabled: Boolean = true, incidentId: String? = null, cardId: String = id,
-                   serverId: String? = null, cardTitle: String = "\u2022") {
+                   serverId: String? = null, cardTitle: String = "\u2022", icon: String? = null,
+                   group: String? = null, headerEnd: Boolean = false, showTitle: Boolean = icon == null) {
             val args = when {
                 incidentId != null -> mapOf("incidentId" to incidentId)
                 serverId != null -> mapOf("serverId" to serverId)
@@ -42,33 +46,22 @@ class HostedResponderUi(
             }
             val boundedLabel = boundedText(label, 256)
             cards += MainUiCardParcel(MainUiCardTypes.ACTION, cardId, boundedText(cardTitle, 256),
-                content = MainUiActionContract.createContent(id, boundedLabel, enabled, args))
+                content = MainUiActionContract.createContent(id, boundedLabel, enabled, args).apply {
+                    if (presentationSupported) {
+                        if (!showTitle) putBoolean("showTitle", false)
+                        if (icon != null) {
+                            putString("actionPresentation", "ICON")
+                            putString("actionIcon", icon)
+                        }
+                        if (group != null) putString("actionGroup", group)
+                        if (headerEnd) putString("actionPlacement", "HEADER_END")
+                    }
+                })
         }
         val incident = view.incident
-        if (incident?.ask?.id != statusPickerFor) {
-            statusPickerFor = null
-            pendingStatus = null
-        }
         val canonical = incident?.ask?.canonical
-        if (incident != null && canonical != null && statusPickerFor != null) {
-            val id = incident.ask.id
-            val target = pendingStatus
-            writeResult()?.let { status("takcad.write", "CAD update", it) }
-            if (target == null) {
-                status("takcad.status.current", "Change status", "Current: ${CadStatus.label(canonical.status)}")
-                STATUS_ACTIONS.forEach { (actionId, value) ->
-                    val current = value == canonical.status
-                    action(actionId, CadStatus.label(value), runtime.canWrite() && !current, id,
-                        cardTitle = if (current) "\u2713" else "\u2022")
-                }
-            } else {
-                status("takcad.status.confirm.prompt", "Confirm status",
-                    "Set ${utf8Prefix(incident.ask.title, 160)} to ${CadStatus.label(target)}?")
-                action("takcad.status.confirm", "Set ${CadStatus.label(target)}", runtime.canWrite(), id,
-                    cardTitle = "\u2713")
-            }
-            action("takcad.status.cancel", "Cancel", true, id, cardTitle = "\u00D7")
-        } else if (serverPicker && incident == null) {
+        if (serverPicker && incident == null) {
+            action("takcad.server.cancel", "Back", cardTitle = "Back", icon = "BACK", headerEnd = true)
             status("server.header", "Active Server", "")
             val servers = runtime.servers()
             val selected = runtime.selectedServer()
@@ -76,13 +69,13 @@ class HostedResponderUi(
             servers.drop(serverOffset).take(SERVER_PAGE).forEachIndexed { index, server ->
                 val mark = if (server.id == selected) "\u2713 " else ""
                 action("takcad.server.select", "$mark${boundedText(server.name, 220)}", runtime.isRunning(),
-                    cardId = if (index == 0) "takcad.server.select" else "takcad.server.select.$index", serverId = server.id)
+                    cardId = if (index == 0) "takcad.server.select" else "takcad.server.select.$index",
+                    serverId = server.id, cardTitle = boundedText(server.name, 256), showTitle = false)
             }
             if (servers.size > SERVER_PAGE) {
                 action("takcad.servers.previous", "Previous", serverOffset > 0, cardTitle = "\u2039")
                 action("takcad.servers.next", "Next", serverOffset + SERVER_PAGE < servers.size, cardTitle = "\u203A")
             }
-            action("takcad.server.cancel", "Back", cardTitle = "Navigation")
         } else if (incident == null) {
             writeResult()?.let { status("takcad.write", "CAD update", it) }
             action("takcad.server.choose", "${boundedText(runtime.selectedServerName() ?: "Select", 200)} \u25BE",
@@ -90,11 +83,11 @@ class HostedResponderUi(
             status("incidents.header", "Active Incident", "")
             view.incidents.drop(view.incidentOffset).take(6).forEachIndexed { index, item ->
                 val state = if (item.ask.canonical == null) participation(item.participation) else
-                    listOfNotNull(runtime.involvement(item), item.ask.canonical.status).distinct().joinToString(" | ")
+                    runtime.involvement(item)
                 action("takcad.incident.open", item.ask.title,
                     incidentId = item.ask.id,
                     cardId = if (index == 0) "takcad.incident.open" else "takcad.incident.open.$index",
-                    cardTitle = state)
+                    cardTitle = state ?: item.ask.title, showTitle = state != null)
             }
             if (view.incidents.size > 6) {
                 action("takcad.incidents.previous", "Previous", view.incidentOffset > 0, cardTitle = "\u2039")
@@ -102,14 +95,19 @@ class HostedResponderUi(
             }
         } else {
             val id = incident.ask.id
-            if (incident.ask.canonical != null && incident.ask.position != null) {
-                action("takcad.bloodhound", "Bloodhound", runtime.canMapAction(C.ACTION_BLOODHOUND), id,
-                    cardTitle = "\uD83D\uDC3E")
-                action("takcad.target", "Target", runtime.canMapAction(C.ACTION_TARGET), id, cardTitle = "\u2316")
-            }
+            action("takcad.back", "Back", cardTitle = "Back", icon = "BACK", headerEnd = true)
             if (canonical != null) {
                 action("takcad.note.add", "Add note", runtime.canWrite() && noteLauncher != null, id,
-                    cardTitle = "\u270E")
+                    cardTitle = "Add note", icon = "NOTE", group = "takcad.incident.actions")
+                val hasPosition = incident.ask.position != null
+                val stopping = runtime.isBloodhounding(id)
+                val bloodhoundLabel = if (stopping) "Stop Bloodhound" else "Start Bloodhound"
+                action("takcad.bloodhound", bloodhoundLabel,
+                    stopping || (hasPosition && runtime.canMapAction(C.ACTION_BLOODHOUND)), id,
+                    cardTitle = bloodhoundLabel, icon = if (stopping) "STOP" else "BLOODHOUND",
+                    group = "takcad.incident.actions")
+                action("takcad.target", "Focus incident on map", hasPosition && runtime.canMapAction(C.ACTION_TARGET), id,
+                    cardTitle = "Focus incident on map", icon = "TARGET", group = "takcad.incident.actions")
             }
             incident.detailSections(if (incident.ask.canonical == null) participation(incident.participation) else null)
                 .forEachIndexed { index, (title, text) ->
@@ -147,15 +145,6 @@ class HostedResponderUi(
                 val etas = responders.map { eta(it.callsign, it.route, it.receivedAt, now) }
                 if (etas.isNotEmpty()) status("responders", "Responder ETAs", boundedText(etas.distinct().joinToString("\n"), 256))
             }
-            if (canonical != null) {
-                // Keep one slot for Back; drop the optional result card first when the detail page is full.
-                val room = 15 - cards.size
-                val result = writeResult()
-                if (result != null && room >= 3) status("takcad.write", "CAD update", result)
-                if (room >= 1) action("takcad.status.choose", "${CadStatus.label(canonical.status)} \u25BE",
-                    runtime.canWrite(), id, cardTitle = "Status")
-            }
-            action("takcad.back", "All incidents", cardTitle = "Navigation")
         }
         check(cards.size <= 16) { "Hosted UI exceeds SDK card limit" }
         return PluginMainUiSchemaParcel(cards = cards)
@@ -191,28 +180,6 @@ class HostedResponderUi(
                 check(runtime.canWrite()) { "CAD update unavailable" }
                 requireNotNull(noteLauncher) { "Note entry unavailable" }(incidentId)
             }
-            "takcad.status.choose" -> {
-                val incidentId = selectedId()
-                requireNotNull(navigation.snapshot().incident?.ask?.canonical) { "Status requires a CAD incident" }
-                statusPickerFor = incidentId
-                pendingStatus = null
-            }
-            in STATUS_ACTIONS.keys -> {
-                require(statusPickerFor == selectedId()) { "Open status list first" }
-                pendingStatus = STATUS_ACTIONS.getValue(id)
-            }
-            "takcad.status.confirm" -> {
-                val incidentId = selectedId()
-                require(statusPickerFor == incidentId) { "Open status list first" }
-                val target = requireNotNull(pendingStatus) { "Choose a status first" }
-                statusPickerFor = null
-                pendingStatus = null
-                runtime.setStatus(incidentId, target)
-            }
-            "takcad.status.cancel" -> {
-                selectedId()
-                if (pendingStatus != null) pendingStatus = null else statusPickerFor = null
-            }
             "takcad.incidents.previous" -> navigation.pageIncidents(-6)
             "takcad.incidents.next" -> navigation.pageIncidents(6)
             "takcad.server.choose" -> {
@@ -235,7 +202,7 @@ class HostedResponderUi(
                 require(next >= 0 && next < runtime.servers().size) { "Server page unavailable" }
                 serverOffset = next
             }
-            "takcad.bloodhound" -> runtime.mapAction(selectedId(), C.ACTION_BLOODHOUND)
+            "takcad.bloodhound" -> runtime.toggleBloodhound(selectedId())
             "takcad.target" -> runtime.mapAction(selectedId(), C.ACTION_TARGET)
             "takcad.incident.accept" -> runtime.accept(selectedId())
             "takcad.incident.decline" -> runtime.decline(selectedId())

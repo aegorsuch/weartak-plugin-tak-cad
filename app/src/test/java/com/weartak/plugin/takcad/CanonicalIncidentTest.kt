@@ -152,17 +152,21 @@ class CanonicalIncidentTest {
             runtime.awaitIdle()
             assertEquals(listOf("mine", "other"), runtime.visibleIncidents().map { it.ask.id })
             val ui = HostedResponderUi(runtime)
+            ui.setHostPresentationVersion(1)
             val list = ui.schema()
             val rows = list.cards.filter { it.cardId.startsWith("takcad.incident.open") }
             assertEquals(2, rows.size)
             assertTrue(rows.first().title.contains("Requested"))
+            assertTrue(rows.none { it.title.contains("ACTIVE") || it.content.getString("actionLabel")!!.contains("ACTIVE") })
+            assertFalse(rows.last().content.getBoolean("showTitle", true))
             assertEquals("Z mine", rows.first().content.getString("actionLabel"))
             assertTrue(MainUiSchemaContractValidator.validate(list, strictV1CardTypesOnly = true) is ContractValidationResult.Ok)
             ui.invoke("takcad.incident.open", Bundle().apply { putString("incidentId", "mine") })
             val details = ui.schema()
-            assertEquals(listOf("takcad.bloodhound", "takcad.target", "takcad.note.add"),
-                details.cards.take(3).map { it.cardId })
-            assertEquals(listOf("\uD83D\uDC3E", "\u2316", "\u270E"), details.cards.take(3).map { it.title })
+            assertEquals(listOf("takcad.back", "takcad.note.add", "takcad.bloodhound", "takcad.target"),
+                details.cards.take(4).map { it.cardId })
+            assertEquals(listOf("BACK", "NOTE", "BLOODHOUND", "TARGET"),
+                details.cards.take(4).map { it.content.getString("actionIcon") })
             assertEquals("Z mine\nACTIVE", details.cards.single { it.cardId == "incident.detail.0" }.subtitle)
             assertFalse(details.cards.any { it.cardId in setOf("limits", "takcad.incident.accept", "takcad.incident.decline") })
             runtime.accept("mine")

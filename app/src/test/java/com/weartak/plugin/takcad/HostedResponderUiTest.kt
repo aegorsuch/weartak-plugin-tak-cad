@@ -41,6 +41,57 @@ class HostedResponderUiTest {
 
     @After fun cleanup() { runtime.close() }
 
+    @Test fun canonicalDetailHasThreeAccessibleIconActionsAndHeaderBackWithoutVisibleTitles() {
+        val record = JSONObject().put("uid", ASK.id).put("incidentName", "Exercise").put("status", "ACTIVE")
+            .put("notes", org.json.JSONArray().put(JSONObject().put("uid", "note").put("info", "Existing note")))
+        runtime.store.receive(CanonicalIncident.parse(record.toString()).ask(), 1)
+        ui.setHostPresentationVersion(1)
+        ui.invoke("takcad.incident.open", idArgs)
+        val schema = ui.schema()
+        val icons = schema.cards.filter { it.content.getString("actionGroup") == "takcad.incident.actions" }
+        assertEquals(listOf("takcad.note.add", "takcad.bloodhound", "takcad.target"), icons.map { it.cardId })
+        assertEquals(listOf("NOTE", "BLOODHOUND", "TARGET"), icons.map { it.content.getString("actionIcon") })
+        assertEquals(listOf("Add note", "Start Bloodhound", "Focus incident on map"),
+            icons.map { it.content.getString("actionLabel") })
+        assertTrue(icons.all { it.content.getString("actionPresentation") == "ICON" &&
+            !it.content.getBoolean("showTitle", true) && !it.content.getBoolean("enabled") })
+        assertTrue(icons.all { JSONObject(it.content.getString("actionArgsJson")!!)
+            .getString("incidentId") == ASK.id })
+        val back = schema.cards.single { it.content.getString("actionPlacement") == "HEADER_END" }
+        assertEquals("takcad.back", back.cardId)
+        assertEquals("BACK", back.content.getString("actionIcon"))
+        assertEquals("Back", back.content.getString("actionLabel"))
+        assertFalse(back.content.getBoolean("showTitle", true))
+        assertNull(back.content.getString("actionGroup"))
+        assertFalse(schema.cards.any { it.title == "Navigation" || it.title == "\uD83D\uDC3E" })
+        assertTrue(schema.cards.any { it.subtitle?.contains("Existing note") == true })
+        assertTrue(schema.cards.any { it.subtitle?.contains("ACTIVE") == true })
+        assertTrue(MainUiSchemaContractValidator.validate(schema, strictV1CardTypesOnly = true) is ContractValidationResult.Ok)
+        ui.invoke("takcad.back", Bundle())
+        val open = ui.schema().cards.single { it.cardId == "takcad.incident.open" }
+        assertEquals("Exercise", open.content.getString("actionLabel"))
+        assertFalse(open.content.getBoolean("showTitle", true))
+        assertFalse(open.title.contains("ACTIVE"))
+    }
+
+    @Test fun oldHostAndRevokedPresentationSupportReceiveOnlyOriginalActionKeys() {
+        runtime.store.receive(CanonicalIncident.parse(JSONObject().put("uid", ASK.id)
+            .put("incidentName", "Exercise").put("status", "ACTIVE").toString()).ask(), 1)
+        ui.invoke("takcad.incident.open", idArgs)
+        fun assertLegacy() {
+            val schema = ui.schema()
+            assertTrue(schema.cards.filter { it.cardType == "ACTION" }.all {
+                it.content.keySet() == setOf("actionId", "actionLabel", "enabled", "actionArgsJson")
+            })
+            assertTrue(MainUiSchemaContractValidator.validate(schema, strictV1CardTypesOnly = true) is ContractValidationResult.Ok)
+        }
+        assertLegacy()
+        ui.setHostPresentationVersion(1)
+        assertTrue(ui.schema().cards.any { it.content.getString("actionPresentation") == "ICON" })
+        ui.setHostPresentationVersion(0)
+        assertLegacy()
+    }
+
     @Test fun listAndDetailsUseExactActionContractWithoutSecrets() {
         runtime.store.receive(ASK, 1)
         val schema = ui.schema()

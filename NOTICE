@@ -24,6 +24,18 @@ to reuse this logo; its inclusion does not assert GPL licensing of the logo.
 The separately supplied WearTAK plugin SDK and build dependencies
 retain their respective licenses. Verify their distribution terms before shipping.
 
+The Bloodhound action artwork is retained byte-for-byte from WearTAK's map
+contact-action resource, not the former paw-shaped approximation.
+Source: https://git.tak.gov/core/weartak-core/wearos-tak-civ
+Source revision: d7b9a27aa8774483c5592151df2b03c355cd5c65
+Path: app/src/main/res/drawable/bloodhound.png
+Git blob: 07a978a8a36eb3ba80d7380ac8150ad999db0385
+SHA-256: 442fbaaea61cfa2f8850a8127acde8432bed765520544b0969022a8f03452df8
+Original source commit: b3e22280f3091017fc370848400fb2c540c09bb7
+No separate license notice accompanies this resource. Reuse was requested by
+the project owner; distribution/license review remains required before shipping.
+Its inclusion does not assert a separate license grant for the artwork.
+
 Route data attribution, when routing is enabled:
 openrouteservice.org by HeiGIT
 Map data: OpenStreetMap contributors

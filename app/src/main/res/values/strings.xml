@@ -32,8 +32,8 @@
     <string name="note_discard">Discard draft</string>
     <string name="note_empty">Note is empty</string>
     <string name="add_note">Add note</string>
-    <string name="status_choose">Status: %1$s</string>
-    <string name="status_confirm">Set %1$s to %2$s?</string>
-    <string name="status_set">Set status</string>
-    <string name="cancel">Cancel</string>
+    <string name="bloodhound">Start Bloodhound</string>
+    <string name="stop_bloodhound">Stop Bloodhound</string>
+    <string name="focus_incident">Focus incident on map</string>
+    <string name="back">Back</string>
 </resources>

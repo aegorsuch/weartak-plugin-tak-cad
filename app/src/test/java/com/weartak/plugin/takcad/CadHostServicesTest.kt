@@ -42,6 +42,9 @@ class CadHostServicesTest {
         var responseStatus = C.OK
         var body = "[]"
         var returnedServer: String? = null
+        var mapActions = listOf(C.ACTION_BLOODHOUND, C.ACTION_TARGET)
+        var activeBloodhoundUid: String? = null
+        var capabilityStatus = C.OK
         val requests = mutableListOf<Bundle>()
         val maps = mutableListOf<Bundle>()
         val threads = mutableListOf<Thread>()
@@ -49,10 +52,11 @@ class CadHostServicesTest {
         var route: ((Bundle) -> String)? = null
         override fun getCapabilities(): Bundle {
             threads += Thread.currentThread()
-            return C.result(C.OK).apply {
+            return C.result(capabilityStatus).apply {
                 putInt(C.KEY_VERSION, C.VERSION)
                 putBoolean(C.KEY_TAK_HTTPS, true)
-                putStringArrayList(C.KEY_MAP_ACTIONS, arrayListOf(C.ACTION_BLOODHOUND, C.ACTION_TARGET))
+                putStringArrayList(C.KEY_MAP_ACTIONS, ArrayList(mapActions))
+                activeBloodhoundUid?.let { putString(CadHostServices.ACTIVE_BLOODHOUND_UID, it) }
                 putParcelableArrayList(C.KEY_SERVERS, ArrayList(servers.map { id ->
                     Bundle().apply { putString(C.KEY_SERVER_ID, id); putString(C.KEY_SERVER_NAME, id) }
                 }))
@@ -71,6 +75,15 @@ class CadHostServicesTest {
         override fun requestMapAction(request: Bundle): Bundle {
             threads += Thread.currentThread()
             maps += Bundle(request)
+            if (responseStatus == C.OK && CadHostServices.ACTION_STOP_BLOODHOUND in mapActions) {
+                when (request.getString(C.KEY_ACTION)) {
+                    C.ACTION_BLOODHOUND -> activeBloodhoundUid = request.getString(C.KEY_UID)
+                    CadHostServices.ACTION_STOP_BLOODHOUND -> {
+                        if (activeBloodhoundUid != request.getString(C.KEY_UID)) return C.result(C.NOT_FOUND)
+                        activeBloodhoundUid = null
+                    }
+                }
+            }
             return C.result(responseStatus)
         }
     }
@@ -144,6 +157,120 @@ class CadHostServicesTest {
         } finally { runtime.close() }
     }
 
+    @Test fun hostedIconsDisableMissingCoordinatesAndUnsupportedActionsIndependently() {
+        val services = Services().apply {
+            body = JSONArray().put(record("one").put("location", JSONObject.NULL)).toString()
+            mapActions = listOf(C.ACTION_TARGET)
+        }
+        val runtime = runtime(services)
+        val launched = mutableListOf<String>()
+        try {
+            val ui = HostedResponderUi(runtime) { launched += it }
+            ui.setHostPresentationVersion(1)
+            val args = Bundle().apply { putString("incidentId", "one") }
+            ui.invoke("takcad.incident.open", args)
+            fun icons() = ui.schema().cards.filter {
+                it.content.getString("actionGroup") == "takcad.incident.actions"
+            }
+            assertEquals(listOf(true, false, false), icons().map { it.content.getBoolean("enabled") })
+            ui.invoke("takcad.note.add", args)
+            assertEquals(listOf("one"), launched)
+            services.body = JSONArray().put(record("one")).toString()
+            runtime.refreshIncidents()
+            runtime.awaitIdle()
+            assertEquals(listOf(true, false, true), icons().map { it.content.getBoolean("enabled") })
+            ui.invoke("takcad.target", args)
+            runtime.awaitIdle()
+            assertEquals(C.ACTION_TARGET, services.maps.single().getString(C.KEY_ACTION))
+            runtime.stop()
+            assertEquals(listOf(false, false, false), icons().map { it.content.getBoolean("enabled") })
+        } finally { runtime.close() }
+    }
+
+    @Test fun bloodhoundStopUsesLiveMatchingIncidentStateAndNeverWritesRespondingOnStop() {
+        val services = Services().apply {
+            body = JSONArray().put(record("one")).put(record("two")).toString()
+            mapActions = listOf(C.ACTION_BLOODHOUND, C.ACTION_TARGET, CadHostServices.ACTION_STOP_BLOODHOUND)
+        }
+        val runtime = runtime(services)
+        try {
+            val ui = HostedResponderUi(runtime)
+            ui.setHostPresentationVersion(1)
+            val one = Bundle().apply { putString("incidentId", "one") }
+            val two = Bundle().apply { putString("incidentId", "two") }
+            fun bloodhound() = ui.schema().cards.single { it.cardId == "takcad.bloodhound" }
+            ui.invoke("takcad.incident.open", one)
+            assertEquals("BLOODHOUND", bloodhound().content.getString("actionIcon"))
+            ui.invoke("takcad.bloodhound", one)
+            runtime.awaitIdle()
+            runtime.awaitIdle()
+            assertEquals("one", services.activeBloodhoundUid)
+            assertTrue(services.maps.single().getBoolean(CadHostServices.RETURN_TO_MAIN))
+            assertEquals("STOP", bloodhound().content.getString("actionIcon"))
+            assertEquals("Stop Bloodhound", bloodhound().content.getString("actionLabel"))
+            ui.invoke("takcad.back", Bundle())
+            ui.invoke("takcad.incident.open", two)
+            assertEquals("BLOODHOUND", bloodhound().content.getString("actionIcon"))
+            ui.invoke("takcad.back", Bundle())
+            ui.invoke("takcad.incident.open", one)
+            services.body = JSONArray().put(record("one").put("location", JSONObject.NULL)).put(record("two")).toString()
+            runtime.refreshIncidents()
+            runtime.awaitIdle()
+            assertTrue(bloodhound().content.getBoolean("enabled"))
+            val before = services.requests.size
+            ui.invoke("takcad.bloodhound", one)
+            runtime.awaitIdle()
+            runtime.awaitIdle()
+            assertNull(services.activeBloodhoundUid)
+            assertEquals(before, services.requests.size)
+            val stop = services.maps.last()
+            assertEquals(setOf(C.KEY_ACTION, C.KEY_UID), stop.keySet())
+            assertEquals(CadHostServices.ACTION_STOP_BLOODHOUND, stop.getString(C.KEY_ACTION))
+            assertEquals("one", stop.getString(C.KEY_UID))
+            assertEquals("BLOODHOUND", bloodhound().content.getString("actionIcon"))
+            assertFalse(bloodhound().content.getBoolean("enabled"))
+            services.activeBloodhoundUid = "two"
+            runtime.refreshMapState()
+            runtime.awaitIdle()
+            runtime.mapAction("one", CadHostServices.ACTION_STOP_BLOODHOUND)
+            runtime.awaitIdle()
+            assertEquals("two", services.activeBloodhoundUid)
+            assertTrue(runtime.lastError!!.contains("not_found"))
+        } finally { runtime.close() }
+    }
+
+    @Test fun unchangedHostStateRefreshDoesNotLoopSchemaCallbacksOrClearOperationErrors() {
+        val services = Services().apply { body = JSONArray().put(record("one")).toString() }
+        val runtime = runtime(services)
+        var changes = 0
+        runtime.setCallback(object : com.weartak.plugin.sdk.aidl.IWearTakHostCallback.Default() {
+            override fun onPluginMainUiSchemaChanged() { changes++ }
+        })
+        try {
+            val ui = HostedResponderUi(runtime)
+            repeat(3) {
+                ui.schema()
+                runtime.awaitIdle()
+            }
+            assertEquals(0, changes)
+            services.code = 403
+            runtime.refreshIncidents()
+            runtime.awaitIdle()
+            val failure = runtime.lastError
+            assertTrue(failure!!.contains("403"))
+            val before = changes
+            ui.schema()
+            runtime.awaitIdle()
+            assertEquals(before, changes)
+            assertEquals(failure, runtime.lastError)
+            services.capabilityStatus = C.UNAVAILABLE
+            ui.schema()
+            runtime.awaitIdle()
+            assertEquals(before, changes)
+            assertTrue(runtime.lastError!!.contains("unavailable"))
+        } finally { runtime.close() }
+    }
+
     @Test fun multipleServersRequireExplicitSelectionAndDoNotMixSnapshots() {
         val services = Services().apply {
             servers = listOf("server-a", "server-b")
@@ -184,6 +311,7 @@ class CadHostServicesTest {
         val runtime = runtime(services)
         try {
             val ui = HostedResponderUi(runtime)
+            ui.setHostPresentationVersion(1)
             val chip = ui.schema().cards.single { it.cardId == "takcad.server.choose" }
             assertEquals("Active Server", chip.title)
             assertEquals("Select \u25BE", chip.content.getString("actionLabel"))
@@ -195,6 +323,9 @@ class CadHostServicesTest {
             val options = ui.schema().cards.filter { it.cardId.startsWith("takcad.server.select") }
             assertEquals(listOf("AFTAK", "NCTAK", "ODIN Local"),
                 options.map { it.content.getString("actionLabel") })
+            assertTrue(options.all { !it.content.getBoolean("showTitle", true) && it.title != "\u2022" })
+            assertEquals("HEADER_END", ui.schema().cards.single { it.cardId == "takcad.server.cancel" }
+                .content.getString("actionPlacement"))
             assertThrows(IllegalArgumentException::class.java) {
                 ui.invoke("takcad.server.select", Bundle().apply { putString("serverId", "unknown") })
             }
@@ -208,7 +339,7 @@ class CadHostServicesTest {
             assertEquals("ODIN Local \u25BE", ui.schema().cards.first().content.getString("actionLabel"))
             ui.invoke("takcad.server.choose", null)
             runtime.awaitIdle()
-            assertEquals("Active Server", ui.schema().cards.first().title)
+            assertEquals("Active Server", ui.schema().cards.single { it.cardId == "server.header" }.title)
             val marked = ui.schema().cards.filter { it.cardId.startsWith("takcad.server.select") }
                 .map { it.content.getString("actionLabel") }
             assertEquals(listOf("AFTAK", "NCTAK", "\u2713 ODIN Local"), marked)
@@ -597,7 +728,7 @@ class CadHostServicesTest {
         } finally { runtime.close() }
     }
 
-    @Test fun hostedStatusChangeRequiresConfirmationAndNoteActionLaunchesEntry() {
+    @Test fun hostedDetailsRemoveManualStatusControlsButNoteActionStillLaunchesEntry() {
         val cad = FakeCad(writable("one"))
         val services = Services().apply { route = cad::handle }
         val runtime = runtime(services)
@@ -606,28 +737,15 @@ class CadHostServicesTest {
             val ui = HostedResponderUi(runtime) { launched += it }
             val args = Bundle().apply { putString("incidentId", "one") }
             ui.invoke("takcad.incident.open", args)
-            val chooser = ui.schema().cards.single { it.cardId == "takcad.status.choose" }
-            assertEquals("Status", chooser.title)
-            assertTrue(chooser.content.keySet().any { chooser.content.get(it) == "Active \u25BE" })
             ui.invoke("takcad.note.add", args)
             assertEquals(listOf("one"), launched)
-            ui.invoke("takcad.status.choose", args)
-            var cards = ui.schema().cards
-            assertFalse(cards.single { it.cardId == "takcad.status.active" }.content.getBoolean("enabled"))
-            assertThrows(IllegalArgumentException::class.java) { ui.invoke("takcad.status.confirm", args) }
-            ui.invoke("takcad.status.completed", args)
-            cards = ui.schema().cards
-            assertTrue(cards.single { it.cardId == "takcad.status.confirm.prompt" }.title == "Confirm status")
-            ui.invoke("takcad.status.cancel", args)
-            ui.invoke("takcad.status.cancel", args)
-            assertTrue(ui.schema().cards.any { it.cardId == "takcad.status.choose" })
+            val cards = ui.schema().cards
+            assertFalse(cards.any { it.cardId.startsWith("takcad.status.") || it.cardId == "takcad.write" })
+            assertFalse(cards.any { it.title in setOf("CAD update", "Status", "Navigation") })
+            listOf("choose", "active", "cancelled", "completed", "confirm", "cancel").forEach {
+                assertThrows(IllegalArgumentException::class.java) { ui.invoke("takcad.status.$it", args) }
+            }
             assertEquals("ACTIVE", cad.records.getValue("one").getString("status"))
-            ui.invoke("takcad.status.choose", args)
-            ui.invoke("takcad.status.completed", args)
-            ui.invoke("takcad.status.confirm", args)
-            runtime.awaitIdle()
-            assertEquals("COMPLETED", cad.records.getValue("one").getString("status"))
-            assertEquals("Status set to Completed", ui.schema().cards.single { it.cardId == "takcad.write" }.subtitle)
         } finally { runtime.close() }
     }
 

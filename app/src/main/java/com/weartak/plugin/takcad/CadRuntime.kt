@@ -108,6 +108,10 @@ class CadRuntime(
     fun isRunning(): Boolean = running
     fun supportsCad(): Boolean = hostServices != null
     fun canMapAction(action: String): Boolean = running && action in hostCapabilities.mapActions
+    fun isBloodhounding(id: String): Boolean = canMapAction(CadHostServices.ACTION_STOP_BLOODHOUND) &&
+        hostCapabilities.activeBloodhoundUid == id
+    fun toggleBloodhound(id: String) = mapAction(id,
+        if (isBloodhounding(id)) CadHostServices.ACTION_STOP_BLOODHOUND else C.ACTION_BLOODHOUND)
     fun canSelectServer(): Boolean = running && hostCapabilities.servers.isNotEmpty()
     fun servers(): List<CadServer> = hostCapabilities.servers
     fun selectedServer(): String? = selectedServerId
@@ -212,6 +216,23 @@ class CadRuntime(
         }
     }
 
+    /** Refreshes live host-owned tracking state without adding a CAD HTTP request. */
+    fun refreshMapState() {
+        if (!running || hostServices == null) return
+        val epoch = generation
+        enqueue(clearErrorOnSuccess = false, notifyAtEnd = false) {
+            checkCurrent(epoch)
+            val services = requireNotNull(hostServices) { "WearTAK map services disconnected" }
+            val capabilities = services.capabilities()
+            val different = synchronized(gate) {
+                checkCurrent(epoch)
+                check(services === hostServices) { "Host connection changed" }
+                (hostCapabilities != capabilities).also { hostCapabilities = capabilities }
+            }
+            if (different) changed()
+        }
+    }
+
     /** Selects and persists [serverId], then refreshes incidents from it once. */
     fun selectServer(serverId: String) {
         val epoch = generation
@@ -244,13 +265,19 @@ class CadRuntime(
             val capabilities = services.capabilities()
             checkCurrent(epoch)
             check(action in capabilities.mapActions) { "Map action unavailable in WearTAK" }
-            services.mapAction(action, incident)
+            services.mapAction(action, incident, returnToMain =
+                action == C.ACTION_BLOODHOUND && CadHostServices.ACTION_STOP_BLOODHOUND in capabilities.mapActions)
             synchronized(gate) {
                 checkCurrent(epoch)
                 check(services === hostServices) { "Host connection changed" }
-                message = if (action == C.ACTION_BLOODHOUND) "Bloodhound activation requested" else "Map focus requested"
+                message = when (action) {
+                    C.ACTION_BLOODHOUND -> "Bloodhound activation requested"
+                    CadHostServices.ACTION_STOP_BLOODHOUND -> "Bloodhound stopped"
+                    else -> "Map focus requested"
+                }
             }
             if (action == C.ACTION_BLOODHOUND && incident.ask.canonical != null) markResponding(id)
+            refreshMapState()
         }
     }
 
@@ -554,14 +581,22 @@ class CadRuntime(
         callsign = control?.deviceStatus?.telemetry?.getString(DeviceStatusContract.KEY_CALLSIGN).orEmpty()
     }
 
-    private fun enqueue(action: () -> Unit) {
-        worker.execute { attempt(action) }
+    private fun enqueue(
+        clearErrorOnSuccess: Boolean = true,
+        notifyAtEnd: Boolean = true,
+        action: () -> Unit,
+    ) {
+        worker.execute { attempt(clearErrorOnSuccess, notifyAtEnd, action) }
     }
 
-    private fun attempt(action: () -> Unit) {
+    private fun attempt(
+        clearErrorOnSuccess: Boolean = true,
+        notifyAtEnd: Boolean = true,
+        action: () -> Unit,
+    ) {
         try {
             action()
-            lastError = null
+            if (clearErrorOnSuccess) lastError = null
         } catch (e: IllegalArgumentException) {
             failed(e.message ?: "Invalid TAK-CAD argument")
         } catch (e: IllegalStateException) {
@@ -579,7 +614,7 @@ class CadRuntime(
         } catch (e: SecurityException) {
             failed("Host denied operation; verify plugin authorization and signing")
         }
-        changed()
+        if (notifyAtEnd) changed()
     }
 
     private fun failed(text: String) {
