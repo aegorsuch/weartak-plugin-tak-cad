@@ -299,7 +299,9 @@ No private content-binding keys, route payloads, or credentials are invented.
 |---|---|
 | `takcad.incident.open` | `incidentId` |
 | `takcad.incidents.previous`, `takcad.incidents.next`, `takcad.back` | none |
-| `takcad.incidents.refresh`, `takcad.server.next` | none |
+| `takcad.incidents.refresh`, `takcad.server.choose`, `takcad.server.cancel` | none |
+| `takcad.servers.previous`, `takcad.servers.next` | none (open server list) |
+| `takcad.server.select` | `serverId` from listed host servers |
 | `takcad.bloodhound`, `takcad.target` | selected `incidentId` |
 | `takcad.incident.accept`, `takcad.incident.decline`, `takcad.refresh` | selected `incidentId` |
 | `takcad.details.previous`, `takcad.details.next` | selected `incidentId` |
@@ -324,8 +326,21 @@ Refresh capabilities before server fetches/map actions. No CAD vehicle identity
 is supplied by the host: use the configured vehicle UID or exact callsign match
 for involvement; never infer a vehicle UID from the watch UID/callsign.
 
+Incident list starts with a server dropdown (`<server name> ▾`, or `Select server ▾`)
+followed directly by incidents; list page shows no helper/status text (errors still
+go to host via `onPluginError`). Tapping the dropdown lists host REST-capable TAK
+servers with a checkmark on selection. Host Services v1 reports only server ID/name,
+so per-server connection status is not shown. Picking a server
+saves it (`cadServerId`) and refreshes once; saved choice is restored when that
+server is listed again. One listed server is auto-selected. Automatic incident
+polling runs every 5 s; consecutive failures back off 5 s, 10 s, 20 s ... up to
+5 min. Success, manual refresh, or server selection resets backoff.
+
 Read endpoint is exactly
 `GET /Marti/api/plugins/tak.server.plugins.TakCadServerPlugin/submit?fn=getIncidents`.
+TAK Server `PluginDataApi` requires a non-empty `Accept` request header (query
+`accept` does not satisfy it); without it the server returns HTTP 500. Host
+Services v1 carries no headers, so the host must send `Accept: application/json`.
 The host selects connected-server HTTPS port 8443, retains its client identity
 and trust, validates hostnames strictly, refuses redirects/transport retries, and
 bounds decompressed responses to 64 KiB. No server API is contacted by tests.

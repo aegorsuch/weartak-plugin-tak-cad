@@ -44,9 +44,8 @@ class HostedResponderUiTest {
     @Test fun listAndDetailsUseExactActionContractWithoutSecrets() {
         runtime.store.receive(ASK, 1)
         val schema = ui.schema()
-        val status = schema.cards.single { it.cardId == "status" }
-        assertEquals("TAK CAD", status.title)
-        assertEquals(runtime.lastError ?: runtime.message, status.subtitle)
+        assertFalse(schema.cards.any { it.cardType == "STATUS" })
+        assertEquals("takcad.server.choose", schema.cards.first().cardId)
         assertTrue(MainUiSchemaContractValidator.validate(schema, strictV1CardTypesOnly = true) is ContractValidationResult.Ok)
         val open = schema.cards.single { it.cardId == "takcad.incident.open" }
         assertEquals("ACTION", open.cardType)
@@ -64,12 +63,14 @@ class HostedResponderUiTest {
         assertFalse(details.cards.any { it.cardId == "limits" })
     }
 
-    @Test fun emptyListHasNoIntegrationHelperText() {
+    @Test fun emptyListHasServerDropdownFirstAndNoHelperText() {
         val schema = ui.schema()
-        assertEquals("No incidents", schema.cards.single { it.cardId == "empty" }.title)
-        assertEquals("", schema.cards.single { it.cardId == "empty" }.subtitle)
+        assertEquals(listOf("takcad.server.choose", "takcad.incidents.refresh"), schema.cards.map { it.cardId })
+        assertEquals("Select server \u25BE", schema.cards.first().title)
+        assertFalse(schema.cards.any { it.cardType == "STATUS" })
+        assertFalse(schema.toString().contains("No incidents"))
         assertFalse(schema.toString().contains("requires host integration"))
-        assertFalse(schema.cards.any { it.cardId == "limits" })
+        assertTrue(MainUiSchemaContractValidator.validate(schema, strictV1CardTypesOnly = true) is ContractValidationResult.Ok)
     }
 
     @Test fun routeAndResponderNavigationRemainInsideSchema() {
