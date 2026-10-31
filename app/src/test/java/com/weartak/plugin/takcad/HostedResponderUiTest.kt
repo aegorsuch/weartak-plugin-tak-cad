@@ -44,20 +44,27 @@ class HostedResponderUiTest {
     @Test fun listAndDetailsUseExactActionContractWithoutSecrets() {
         runtime.store.receive(ASK, 1)
         val schema = ui.schema()
-        assertFalse(schema.cards.any { it.cardType == "STATUS" })
         assertEquals("takcad.server.choose", schema.cards.first().cardId)
+        assertEquals("Active Server", schema.cards.first().title)
+        assertEquals("incidents.header", schema.cards[1].cardId)
+        assertEquals("Active Incident", schema.cards[1].title)
         assertTrue(MainUiSchemaContractValidator.validate(schema, strictV1CardTypesOnly = true) is ContractValidationResult.Ok)
         val open = schema.cards.single { it.cardId == "takcad.incident.open" }
         assertEquals("ACTION", open.cardType)
         assertEquals("takcad.incident.open", open.content.getString("actionId"))
-        assertTrue(open.content.getString("actionLabel")!!.startsWith(ASK.title))
+        assertEquals("Asked - acceptance required", open.title)
+        assertEquals(ASK.title, open.content.getString("actionLabel"))
         assertEquals(ASK.id, JSONObject(open.content.getString("actionArgsJson")!!).getString("incidentId"))
         assertTrue(open.content.getBoolean("enabled"))
         ui.invoke("takcad.incident.open", idArgs)
         val details = ui.schema()
         assertTrue(details.cards.any { it.cardId == "takcad.incident.accept" })
         assertFalse(details.cards.single { it.cardId == "takcad.incident.accept" }.content.getBoolean("enabled"))
-        assertTrue(details.cards.single { it.cardId == "details" }.subtitle!!.contains(ASK.title))
+        val detailCards = details.cards.filter { it.cardType == "STATUS" }
+        assertEquals("Active Incident", detailCards.first().title)
+        assertTrue(detailCards.any { it.subtitle!!.contains(ASK.title) })
+        assertEquals(detailCards.size, detailCards.map { it.title }.distinct().size)
+        assertFalse(details.cards.any { it.cardId.startsWith("takcad.details.") })
         assertFalse(details.toString().contains("secret-must-not"))
         assertFalse(details.cards.any { it.content.keySet().any { key -> key.contains("key", true) || key.contains("token", true) } })
         assertFalse(details.cards.any { it.cardId == "limits" })
@@ -65,9 +72,11 @@ class HostedResponderUiTest {
 
     @Test fun emptyListHasServerDropdownFirstAndNoHelperText() {
         val schema = ui.schema()
-        assertEquals(listOf("takcad.server.choose", "takcad.incidents.refresh"), schema.cards.map { it.cardId })
-        assertEquals("Select server \u25BE", schema.cards.first().title)
-        assertFalse(schema.cards.any { it.cardType == "STATUS" })
+        assertEquals(listOf("takcad.server.choose", "incidents.header"), schema.cards.map { it.cardId })
+        assertEquals("Active Server", schema.cards.first().title)
+        assertEquals("Select \u25BE", schema.cards.first().content.getString("actionLabel"))
+        assertEquals("Active Incident", schema.cards.last().title)
+        assertFalse(schema.cards.any { it.cardId == "takcad.incidents.refresh" })
         assertFalse(schema.toString().contains("No incidents"))
         assertFalse(schema.toString().contains("requires host integration"))
         assertTrue(MainUiSchemaContractValidator.validate(schema, strictV1CardTypesOnly = true) is ContractValidationResult.Ok)
@@ -105,10 +114,11 @@ class HostedResponderUiTest {
         assertTrue(schema.cards.all { it.subtitle.orEmpty().toByteArray().size <= 256 })
         val before = schema.cards.single { it.cardId == "route" }.subtitle
         ui.invoke("takcad.route.text.next", idArgs)
-        assertTrue(ui.schema().cards.single { it.cardId == "route" }.title.contains("text 2/"))
+        assertEquals("Guidance", ui.schema().cards.single { it.cardId == "route" }.title)
         assertEquals(before, ui.schema().cards.single { it.cardId == "route" }.subtitle)
-        ui.invoke("takcad.details.next", idArgs)
-        assertTrue(ui.schema().cards.single { it.cardId == "details" }.title.contains("2/"))
+        assertFalse(schema.cards.any { it.cardId.startsWith("takcad.details.") })
+        assertTrue(schema.cards.any { it.cardId == "incident.detail.1" &&
+            it.subtitle!!.endsWith("…") })
     }
 
     @Test fun declineUsesRuntimeAndNavigationEmitsHostRefreshCallbacks() {

@@ -136,7 +136,7 @@ class CadHostServicesTest {
             assertNull(runtime.lastError)
             assertFalse(runtime.supportsCad())
             val ui = HostedResponderUi(runtime)
-            assertFalse(ui.schema().cards.single { it.cardId == "takcad.incidents.refresh" }.content.getBoolean("enabled"))
+            assertFalse(ui.schema().cards.any { it.cardId == "takcad.incidents.refresh" })
             runtime.refreshIncidents()
             runtime.awaitIdle()
             assertTrue(runtime.lastError!!.contains("Update WearTAK"))
@@ -184,14 +184,16 @@ class CadHostServicesTest {
         try {
             val ui = HostedResponderUi(runtime)
             val chip = ui.schema().cards.single { it.cardId == "takcad.server.choose" }
-            assertEquals("Select server \u25BE", chip.title)
+            assertEquals("Active Server", chip.title)
+            assertEquals("Select \u25BE", chip.content.getString("actionLabel"))
             assertTrue(chip.content.getBoolean("enabled"))
             assertFalse(ui.schema().cards.any { it.cardId == "takcad.server.next" })
             ui.invoke("takcad.server.choose", null)
             runtime.awaitIdle()
             assertTrue(services.requests.isEmpty())
             val options = ui.schema().cards.filter { it.cardId.startsWith("takcad.server.select") }
-            assertEquals(listOf("AFTAK", "NCTAK", "ODIN Local"), options.map { it.title })
+            assertEquals(listOf("AFTAK", "NCTAK", "ODIN Local"),
+                options.map { it.content.getString("actionLabel") })
             assertThrows(IllegalArgumentException::class.java) {
                 ui.invoke("takcad.server.select", Bundle().apply { putString("serverId", "unknown") })
             }
@@ -202,11 +204,12 @@ class CadHostServicesTest {
             runtime.awaitIdle()
             assertEquals(listOf("ODIN Local"), services.requests.map { it.getString(C.KEY_SERVER_ID) })
             assertEquals("odin", runtime.visibleIncidents().single().ask.id)
-            assertEquals("ODIN Local \u25BE", ui.schema().cards.first().title)
+            assertEquals("ODIN Local \u25BE", ui.schema().cards.first().content.getString("actionLabel"))
             ui.invoke("takcad.server.choose", null)
             runtime.awaitIdle()
-            assertFalse(ui.schema().cards.any { it.cardType == "STATUS" })
-            val marked = ui.schema().cards.filter { it.cardId.startsWith("takcad.server.select") }.map { it.title }
+            assertEquals("Active Server", ui.schema().cards.first().title)
+            val marked = ui.schema().cards.filter { it.cardId.startsWith("takcad.server.select") }
+                .map { it.content.getString("actionLabel") }
             assertEquals(listOf("AFTAK", "NCTAK", "\u2713 ODIN Local"), marked)
             ui.invoke("takcad.server.cancel", null)
             assertTrue(ui.schema().cards.any { it.cardId == "takcad.server.choose" })
@@ -218,6 +221,30 @@ class CadHostServicesTest {
             assertEquals("ODIN Local", restored.selectedServer())
             assertEquals("ODIN Local", services.requests.last().getString(C.KEY_SERVER_ID))
         } finally { restored.close() }
+    }
+
+    @Test fun serverPickerShowsFourCompactChoicesPerPage() {
+        val services = Services().apply { servers = (1..5).map { "Server $it" } }
+        val runtime = runtime(services)
+        try {
+            val ui = HostedResponderUi(runtime)
+            ui.invoke("takcad.server.choose", null)
+            val firstPage = ui.schema()
+            val firstOptions = firstPage.cards.filter { it.cardId.startsWith("takcad.server.select") }
+            assertEquals(4, firstOptions.size)
+            assertEquals(listOf("Server 1", "Server 2", "Server 3", "Server 4"),
+                firstOptions.map { it.content.getString("actionLabel") })
+            assertTrue(firstPage.cards.single { it.cardId == "takcad.servers.next" }.content.getBoolean("enabled"))
+            assertTrue(firstPage.cards.any { it.cardId == "takcad.server.cancel" })
+
+            ui.invoke("takcad.servers.next", Bundle())
+            val secondPage = ui.schema()
+            assertEquals(listOf("Server 5"), secondPage.cards.filter {
+                it.cardId.startsWith("takcad.server.select")
+            }.map { it.content.getString("actionLabel") })
+            assertFalse(secondPage.cards.single { it.cardId == "takcad.servers.next" }.content.getBoolean("enabled"))
+            assertTrue(secondPage.cards.single { it.cardId == "takcad.servers.previous" }.content.getBoolean("enabled"))
+        } finally { runtime.close() }
     }
 
     @Test fun repeatedCadFailuresBackOffAutomaticPollingUntilSuccessOrManualRefresh() {

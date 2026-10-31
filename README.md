@@ -18,16 +18,17 @@ rather than producing an invalid or silently downgraded CI version.
   UI labels both **Requested**. Current vehicle responses in `IN_ROUTE` or
   `ON_SCENE` count as responding. Completed/cancelled canonical incidents are
   retained locally but excluded from the active list.
-- Tapping a row opens expanded, paged canonical details: name/status/type,
-  narrative, available coordinates, requested callsigns/vehicle IDs, responding
+- Tapping a row opens canonical details grouped by field: name/status/type,
+  narrative, location, requested callsigns/vehicle IDs, responding
   vehicles/callsigns/status/ETAs, responding personnel UIDs/arrival times, and notes newest first. Missing coordinates
-  remain missing, never synthesized as `(0,0)`.
+  remain missing, never synthesized as `(0,0)`. Oversized fields end with an
+  ellipsis instead of repeating labels across pages.
 - Canonical incident JSON is parsed from `__takCadIncidentDetails` inside the
   CoT detail subtree without assuming an event `type` or `how`. `parseList`
   accepts the bare incident array expected by the ATAK `getIncidents` client.
 - Optional Host Services SDK 1.0.0/protocol 1 enables **read-only CAD refresh**
   through the connected host's authenticated HTTPS bridge. Fetch on start,
-  every five seconds while running, or with **Refresh incidents**. One connected
+  every five seconds while running, or after server selection. One connected
   server is selected automatically; multiple require an explicit **Server**
   selection. Disconnected/other-server snapshots and unscoped canonical CoT
   records are hidden when using this extension, rather than mixed across servers. A complete valid
@@ -76,8 +77,8 @@ rather than producing an invalid or silently downgraded CI version.
   key via host settings, backups, logs, or repository configuration.
 - Serve responder list/details, accept/local-decline, refresh, instructions, and
   team ETAs through the WearTAK hosted TAK-CAD page. Plugin owns selection/paging;
-  no hosted action launches an activity. Long details/instructions are paged within
-  SDK text/card bounds. The launcher remains a development fallback for routing
+  no hosted action launches an activity. Long instructions are paged within SDK
+  text/card bounds. The launcher remains a development fallback for routing
   setup until a secure hosted credential-input contract exists.
 
 ## Build and verification
@@ -299,15 +300,13 @@ No private content-binding keys, route payloads, or credentials are invented.
 |---|---|
 | `takcad.incident.open` | `incidentId` |
 | `takcad.incidents.previous`, `takcad.incidents.next`, `takcad.back` | none |
-| `takcad.incidents.refresh`, `takcad.server.choose`, `takcad.server.cancel` | none |
+| `takcad.server.choose`, `takcad.server.cancel` | none |
 | `takcad.servers.previous`, `takcad.servers.next` | none (open server list) |
 | `takcad.server.select` | `serverId` from listed host servers |
 | `takcad.bloodhound`, `takcad.target` | selected `incidentId` |
 | `takcad.incident.accept`, `takcad.incident.decline`, `takcad.refresh` | selected `incidentId` |
-| `takcad.details.previous`, `takcad.details.next` | selected `incidentId` |
 | `takcad.route.previous`, `takcad.route.next` | selected `incidentId` |
 | `takcad.route.text.previous`, `takcad.route.text.next` | selected `incidentId` |
-| `takcad.responders.previous`, `takcad.responders.next` | selected `incidentId` |
 
 Unknown arguments and stale/mismatched selected IDs are rejected; runtime still
 enforces acceptance, connectivity, GPS freshness, and lifecycle gates. Receive
@@ -326,15 +325,15 @@ Refresh capabilities before server fetches/map actions. No CAD vehicle identity
 is supplied by the host: use the configured vehicle UID or exact callsign match
 for involvement; never infer a vehicle UID from the watch UID/callsign.
 
-Incident list starts with a server dropdown (`<server name> ▾`, or `Select server ▾`)
-followed directly by incidents; list page shows no helper/status text (errors still
-go to host via `onPluginError`). Tapping the dropdown lists host REST-capable TAK
-servers with a checkmark on selection. Host Services v1 reports only server ID/name,
-so per-server connection status is not shown. Picking a server
-saves it (`cadServerId`) and refreshes once; saved choice is restored when that
-server is listed again. One listed server is auto-selected. Automatic incident
-polling runs every 5 s; consecutive failures back off 5 s, 10 s, 20 s ... up to
-5 min. Success, manual refresh, or server selection resets backoff.
+Incident list starts with **Active Server**, then compact server selector, then
+**Active Incident** and incident rows. No helper or refresh text is shown. Tapping
+the selector lists up to four host REST-capable TAK servers at a time with a
+checkmark on selection. Host Services v1 reports only server ID/name, so per-server
+connection status is not shown. Picking a server saves it (`cadServerId`) and
+refreshes once; saved choice is restored when that server is listed again. One
+listed server is auto-selected. Automatic incident polling runs every 5 s;
+consecutive failures back off 5 s, 10 s, 20 s ... up to 5 min. Success or server
+selection resets backoff. Detail actions appear first, followed by each field once.
 
 Read endpoint is exactly
 `GET /Marti/api/plugins/tak.server.plugins.TakCadServerPlugin/submit?fn=getIncidents`.
