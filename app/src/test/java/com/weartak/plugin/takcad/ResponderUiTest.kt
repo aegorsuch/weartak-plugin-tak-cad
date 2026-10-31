@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.view.WindowManager
 import android.widget.Button
+import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -13,6 +14,7 @@ import com.weartak.plugin.sdk.aidl.IWearTakPluginControl
 import com.weartak.plugin.sdk.model.PluginInitParcel
 import com.weartak.plugin.sdk.host.v1.HostServicesContract as C
 import com.weartak.plugin.sdk.host.v1.IWearTakHostServices
+import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -24,6 +26,38 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = CadApplication::class)
 class ResponderUiTest {
+    @Test fun incidentDetailStartsWithAccessibleMapIconActions() {
+        val runtime = (RuntimeEnvironment.getApplication() as CadApplication).runtime
+        runtime.awaitIdle()
+        val canonical = CanonicalIncident.parse(JSONObject()
+            .put("uid", "incident")
+            .put("incidentName", "Exercise")
+            .put("status", "ACTIVE")
+            .put("location", JSONObject().put("coords", JSONObject()
+                .put("latitudeDeg", 38).put("longitudeDeg", -77)))
+            .toString())
+        runtime.store.receive(canonical.ask(), 1)
+        val controller = Robolectric.buildActivity(ResponderActivity::class.java).setup()
+        try {
+            val activity = controller.get()
+            val root = activity.findViewById<android.view.ViewGroup>(android.R.id.content)
+            var content = ((root.getChildAt(0) as ScrollView).getChildAt(0) as LinearLayout)
+            content.children().filterIsInstance<Button>().single { it.text.toString().startsWith("Exercise") }.performClick()
+            content = ((root.getChildAt(0) as ScrollView).getChildAt(0) as LinearLayout)
+            val children = content.children()
+            val mapActions = children.first() as LinearLayout
+            assertEquals(listOf("Bloodhound", "Target"), mapActions.children()
+                .filterIsInstance<ImageButton>().map { it.contentDescription.toString() })
+            assertEquals("Active Incident", (children[1] as TextView).text)
+        } finally {
+            controller.pause().stop().destroy()
+            runtime.close()
+        }
+    }
+
+    private fun LinearLayout.children(): List<android.view.View> =
+        (0 until childCount).map(::getChildAt)
+
     @Test fun launcherShowsEmptyStateAndSetupWithoutHost() {
         val runtime = (RuntimeEnvironment.getApplication() as CadApplication).runtime
         runtime.awaitIdle()
@@ -36,8 +70,9 @@ class ResponderUiTest {
             val scroll = root.getChildAt(0) as ScrollView
             val content = scroll.getChildAt(0) as LinearLayout
             val children = (0 until content.childCount).map { content.getChildAt(it) }
-            assertEquals("Select server \u25BE", (children.first() as Button).text)
-            assertFalse(children.any { it !is Button })
+            assertEquals("Active Server", (children.first() as TextView).text)
+            assertEquals("Select \u25BE", (children[1] as Button).text)
+            assertEquals("Active Incident", (children[2] as TextView).text)
             assertFalse(children.filterIsInstance<TextView>().any { it.text.contains("protocol extension") })
             assertEquals(R.mipmap.ic_launcher, activity.applicationInfo.icon)
             assertNotNull(activity.getDrawable(activity.applicationInfo.icon))
@@ -129,8 +164,7 @@ class ResponderUiTest {
             assertEquals("Connect a TAK server", binder.mainUiState.getString("kv_row2_value"))
             assertTrue(calls.isNotEmpty())
             assertTrue(calls.all { it !== android.os.Looper.getMainLooper().thread })
-            assertTrue(binder.mainUiSchema.cards.single { it.cardId == "takcad.incidents.refresh" }
-                .content.getBoolean("enabled"))
+            assertFalse(binder.mainUiSchema.cards.any { it.cardId == "takcad.incidents.refresh" })
             binder.stopPlugin()
             binder.shutdownPlugin()
             assertFalse(runtime.supportsCad())

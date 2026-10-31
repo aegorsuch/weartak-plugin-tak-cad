@@ -99,34 +99,55 @@ data class CanonicalIncident(
     }
 }
 
-fun Incident.detailText(): String = buildList {
-    add(ask.title)
+fun Incident.detailSections(legacyStatus: String? = null): List<Pair<String, String>> {
     val canonical = ask.canonical
-    if (canonical != null) {
-        add(canonical.status)
-        if (canonical.type.isNotBlank()) add(canonical.type)
+    return buildList {
+        val identityValues = buildList {
+            ask.title.takeIf(String::isNotBlank)?.let(::add)
+            canonical?.status?.takeIf(String::isNotBlank)?.let(::add)
+            canonical?.type?.takeIf(String::isNotBlank)?.let(::add)
+            if (canonical == null) legacyStatus?.takeIf(String::isNotBlank)?.let(::add)
+        }.distinct().joinToString("\n")
+        if (identityValues.isNotBlank()) add("Active Incident" to identityValues)
+
+        val summary = (canonical?.details?.takeIf(String::isNotBlank) ?: ask.summary)
+            .takeIf { it.isNotBlank() && it !in identityValues.lines() }
+        summary?.let { add("Summary" to it) }
+
+        val location = canonical?.address?.takeIf(String::isNotBlank)
+            ?: ask.position?.let { "${it.latitude}, ${it.longitude}" }
+        location?.takeIf(String::isNotBlank)?.let { add("Location" to it) }
+
+        if (canonical != null) {
+            val requested = buildList {
+                canonical.requestedCallsigns.distinct().takeIf { it.isNotEmpty() }
+                    ?.let { add("Callsigns: ${it.joinToString()}") }
+                canonical.requestedVehicleUids.distinct().takeIf { it.isNotEmpty() }
+                    ?.let { add("Vehicle IDs: ${it.joinToString()}") }
+            }
+            if (requested.isNotEmpty()) add("Requested units" to requested.joinToString("\n"))
+
+            val responders = buildList {
+                canonical.personnel.forEach { person ->
+                    listOf("Personnel", person.uid, person.arrivalTime)
+                        .filter(String::isNotBlank).joinToString(" | ").takeIf(String::isNotBlank)?.let(::add)
+                }
+                canonical.responses.forEach { response ->
+                    listOf(
+                        "Vehicle", response.callsign, response.name, response.uid, response.status,
+                        response.etaSeconds?.let { "${it / 60} min" }.orEmpty(),
+                    ).filter(String::isNotBlank).joinToString(" | ").takeIf(String::isNotBlank)?.let(::add)
+                }
+            }.distinct()
+            if (responders.isNotEmpty()) add("Responders" to responders.joinToString("\n"))
+
+            val notes = canonical.notes.map { note ->
+                listOf(note.timestamp, note.creator, note.info).filter(String::isNotBlank).joinToString(" | ")
+            }.distinct()
+            if (notes.isNotEmpty()) add("Notes" to notes.joinToString("\n"))
+        }
     }
-    if (ask.summary.isNotBlank()) add(ask.summary)
-    if (!canonical?.address.isNullOrBlank()) add(requireNotNull(canonical).address)
-    ask.position?.let { add("${it.latitude}, ${it.longitude}") }
-    if (canonical != null) {
-        if (canonical.requestedCallsigns.isNotEmpty()) add("Requested: ${canonical.requestedCallsigns.joinToString()}")
-        if (canonical.requestedVehicleUids.isNotEmpty()) add("Requested vehicles: ${canonical.requestedVehicleUids.joinToString()}")
-        if (canonical.personnel.isNotEmpty()) add("Responding personnel")
-        for (person in canonical.personnel) {
-            add(listOf(person.uid, person.arrivalTime).filter { it.isNotBlank() }.joinToString(" | "))
-        }
-        if (canonical.responses.isNotEmpty()) add("Responding vehicles")
-        for (response in canonical.responses) {
-            add(listOf(response.callsign, response.name, response.uid, response.status,
-                response.etaSeconds?.let { "${it / 60} min" }.orEmpty()).filter { it.isNotBlank() }.joinToString(" | "))
-        }
-        if (canonical.notes.isNotEmpty()) add("Notes")
-        for (note in canonical.notes) {
-            add(listOf(note.timestamp, note.creator, note.info).filter { it.isNotBlank() }.joinToString("\n"))
-        }
-    }
-}.joinToString("\n")
+}
 
 private fun JSONObject.text(key: String, limit: Int): String =
     (if (isNull(key)) "" else getString(key)).also { require(it.length <= limit) { "$key exceeds limit" } }

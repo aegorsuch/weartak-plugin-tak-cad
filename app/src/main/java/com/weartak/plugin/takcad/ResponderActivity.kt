@@ -11,6 +11,7 @@ import android.text.InputType
 import android.view.View
 import android.widget.Button
 import android.widget.EditText
+import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -26,6 +27,7 @@ class ResponderActivity : Activity() {
     private var routeJson: String? = null
     private var configuring = false
     private var pickingServer = false
+    private var serverOffset = 0
     private val observer: () -> Unit = { handler.post { if (!configuring) render() } }
     private val tick = object : Runnable {
         override fun run() {
@@ -76,7 +78,10 @@ class ResponderActivity : Activity() {
         surface()
         val incidents = runtime.visibleIncidents()
         if (pickingServer && selected == null) {
-            for (server in runtime.servers()) {
+            text("Active Server", 20f)
+            val servers = runtime.servers()
+            serverOffset = serverOffset.coerceIn(0, ((servers.size - 1) / SERVER_PAGE).coerceAtLeast(0) * SERVER_PAGE)
+            for (server in servers.drop(serverOffset).take(SERVER_PAGE)) {
                 val mark = if (server.id == runtime.selectedServer()) "\u2713 " else ""
                 button("$mark${server.name}", runtime.isRunning()) {
                     pickingServer = false
@@ -84,18 +89,25 @@ class ResponderActivity : Activity() {
                     render()
                 }
             }
-            button("Cancel") { pickingServer = false; render() }
+            if (servers.size > SERVER_PAGE) {
+                button("Previous", serverOffset > 0) { serverOffset -= SERVER_PAGE; render() }
+                button("Next", serverOffset + SERVER_PAGE < servers.size) { serverOffset += SERVER_PAGE; render() }
+            }
+            button("Back") { pickingServer = false; render() }
             return
         }
         if (selected == null) {
-            button("${runtime.selectedServerName() ?: "Select server"} \u25BE", runtime.canSelectServer()) {
+            text("Active Server", 20f)
+            button("${runtime.selectedServerName() ?: "Select"} \u25BE", runtime.canSelectServer()) {
                 pickingServer = true
+                serverOffset = 0
                 runtime.refreshServers()
                 render()
             }
+            text("Active Incident", 20f)
             for (incident in incidents) {
-                val state = listOfNotNull(runtime.involvement(incident),
-                    incident.ask.canonical?.status ?: stateLabel(incident.participation)).distinct().joinToString(" | ")
+                val state = if (incident.ask.canonical == null) stateLabel(incident.participation) else
+                    listOfNotNull(runtime.involvement(incident), incident.ask.canonical.status).distinct().joinToString(" | ")
                 button("${incident.ask.title}\n$state") {
                     selected = incident.ask.id
                     step = 0
@@ -112,15 +124,19 @@ class ResponderActivity : Activity() {
             render()
             return
         }
-        text(runtime.lastError ?: runtime.message)
-        text(incident.detailText(), 20f)
-        if (incident.ask.canonical == null) text(stateLabel(incident.participation))
         if (incident.ask.canonical != null && incident.ask.position != null) {
-            button("Bloodhound", runtime.canMapAction(C.ACTION_BLOODHOUND)) {
-                runtime.mapAction(incident.ask.id, C.ACTION_BLOODHOUND)
-            }
-            button("Target", runtime.canMapAction(C.ACTION_TARGET)) { runtime.mapAction(incident.ask.id, C.ACTION_TARGET) }
+            mapActions(
+                bloodhound = { runtime.mapAction(incident.ask.id, C.ACTION_BLOODHOUND) },
+                target = { runtime.mapAction(incident.ask.id, C.ACTION_TARGET) },
+                bloodhoundEnabled = runtime.canMapAction(C.ACTION_BLOODHOUND),
+                targetEnabled = runtime.canMapAction(C.ACTION_TARGET),
+            )
         }
+        incident.detailSections(if (incident.ask.canonical == null) stateLabel(incident.participation) else null)
+            .forEach { (heading, value) ->
+                text(heading, 20f)
+                text(value)
+            }
         if (incident.ask.canonical == null && incident.participation == Participation.ASKED) {
             button(getString(R.string.accept)) { runtime.accept(incident.ask.id) }
             button(getString(R.string.decline)) { runtime.decline(incident.ask.id) }
@@ -136,16 +152,18 @@ class ResponderActivity : Activity() {
             button(getString(R.string.previous), step > 0) { step--; render() }
             button(getString(R.string.next), step < route.steps.lastIndex) { step++; render() }
             text(getString(R.string.route_attribution), 12f)
-        } else if (incident.ask.canonical == null) text(getString(R.string.route_unavailable))
+        }
         if (incident.participation == Participation.RESPONSE_QUEUED) {
             button(getString(R.string.refresh_route)) { runtime.refresh(incident.ask.id) }
         }
         if (incident.ask.canonical == null) {
-            text(getString(R.string.responders), 20f)
-            if (incident.responders.isEmpty()) text(getString(R.string.no_responders))
-            incident.responders.values.sortedBy { it.route.seconds }.forEach {
-                text(getString(R.string.estimate, it.callsign, ceil(it.route.seconds / 60).toInt(),
-                    age(it.receivedAt), if (age(it.receivedAt) > 90) getString(R.string.stale) else ""))
+            val responders = incident.responders.values.sortedBy { it.route.seconds }
+            if (responders.isNotEmpty()) {
+                text(getString(R.string.responders), 20f)
+                responders.forEach {
+                    text(getString(R.string.estimate, it.callsign, ceil(it.route.seconds / 60).toInt(),
+                        age(it.receivedAt), if (age(it.receivedAt) > 90) getString(R.string.stale) else ""))
+                }
             }
         }
     }
@@ -218,6 +236,32 @@ class ResponderActivity : Activity() {
         })
     }
 
+    private fun mapActions(
+        bloodhound: () -> Unit,
+        target: () -> Unit,
+        bloodhoundEnabled: Boolean,
+        targetEnabled: Boolean,
+    ) {
+        content.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            val actionSize = dp(48)
+            addView(mapAction(R.drawable.ic_bloodhound, "Bloodhound", bloodhoundEnabled, bloodhound),
+                LinearLayout.LayoutParams(actionSize, actionSize).apply { weight = 1f })
+            addView(mapAction(R.drawable.ic_target, "Target", targetEnabled, target),
+                LinearLayout.LayoutParams(actionSize, actionSize).apply { weight = 1f })
+        })
+    }
+
+    private fun mapAction(icon: Int, description: String, enabled: Boolean, action: () -> Unit) =
+        ImageButton(this).apply {
+            setImageResource(icon)
+            contentDescription = description
+            isEnabled = enabled
+            scaleType = android.widget.ImageView.ScaleType.CENTER_INSIDE
+            setPadding(dp(8), dp(8), dp(8), dp(8))
+            setOnClickListener { action() }
+        }
+
     private fun age(time: Long): Int = ((System.currentTimeMillis() - time).coerceAtLeast(0) / 1000)
         .coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
@@ -227,4 +271,6 @@ class ResponderActivity : Activity() {
         Participation.DECLINED -> getString(R.string.state_declined)
         Participation.RESPONSE_QUEUED -> getString(R.string.state_responding)
     }
+
+    private companion object { const val SERVER_PAGE = 4 }
 }

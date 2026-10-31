@@ -40,7 +40,8 @@ class CanonicalIncidentTest {
         val event = CadProtocol.parse(xml(data)) as CadEvent.Ask
         assertEquals(Position(38.0, -77.0), event.position)
         assertEquals("Medical", event.canonical!!.type)
-        assertTrue(Incident(event).detailText().contains("Exercise Road, Training City"))
+        assertEquals("Exercise Road, Training City",
+            Incident(event).detailSections().single { it.first == "Location" }.second)
         val file = folder.newFile()
         val store = IncidentStore(file)
         store.receive(event, 1)
@@ -56,7 +57,7 @@ class CanonicalIncidentTest {
         val data = record().put("location", JSONObject.NULL)
         val incident = CanonicalIncident.parseList(JSONArray().put(data).toString()).single()
         assertNull(incident.position)
-        assertFalse(Incident(incident.ask()).detailText().contains("0.0, 0.0"))
+        assertFalse(Incident(incident.ask()).detailSections().any { it.second.contains("0.0, 0.0") })
         assertThrows(IllegalArgumentException::class.java) {
             CanonicalIncident.parseList(JSONArray().put(data).put(data).toString())
         }
@@ -67,6 +68,14 @@ class CanonicalIncidentTest {
             CanonicalIncident.parse(record().put("location", JSONObject().put("coords",
                 JSONObject().put("latitudeDeg", 100).put("longitudeDeg", 0))).toString())
         }
+    }
+
+    @Test fun identicalIncidentNameAndNarrativeAppearOnlyOnce() {
+        val incident = CanonicalIncident.parse(record(name = "Exercise")
+            .put("details", "Exercise").toString())
+        val sections = Incident(incident.ask()).detailSections()
+        assertEquals(listOf("Active Incident", "Location"), sections.map { it.first })
+        assertEquals("Exercise\nACTIVE", sections.first().second)
     }
 
     @Test fun requestsMatchExactSelfCallsignOrVehicleUidButNeverBlankIdentity() {
@@ -88,7 +97,7 @@ class CanonicalIncidentTest {
             assertEquals(if (status == "AVAILABLE") null else "Responding", incident.involvement("SELF", ""))
             assertEquals(if (status == "AVAILABLE") null else "Responding", incident.involvement("", "v"))
             assertNull(incident.involvement("OTHER", "other"))
-            assertTrue(Incident(incident.ask()).detailText().contains("2 min"))
+            assertTrue(Incident(incident.ask()).detailSections().single { it.first == "Responders" }.second.contains("2 min"))
         }
         val vehicle = JSONObject().put("uid", "v").put("callsign", "SELF").put("status", "IN_ROUTE")
             .put("currentVehicleResponses", JSONArray().put(
@@ -101,8 +110,8 @@ class CanonicalIncidentTest {
     @Test fun personnelMetadataShowsOnlyVerifiedUidAndArrivalTime() {
         val incident = CanonicalIncident.parse(record().put("personnelResponding", JSONArray().put(
             JSONObject().put("uid", "person-1").put("arrivalTime", "2026-10-30T12:00:00Z"))).toString())
-        val details = Incident(incident.ask()).detailText()
-        assertTrue(details.contains("Responding personnel\nperson-1 | 2026-10-30T12:00:00Z"))
+        val details = Incident(incident.ask()).detailSections().single { it.first == "Responders" }.second
+        assertTrue(details.contains("Personnel | person-1 | 2026-10-30T12:00:00Z"))
         assertNull(incident.involvement("person-1", ""))
     }
 
@@ -113,9 +122,10 @@ class CanonicalIncidentTest {
                 .put("creator", "SELF").put("info", "Recent note"))
         val incident = CanonicalIncident.parse(record().put("notes", notes).toString())
         assertEquals(listOf("new", "old"), incident.notes.map { it.uid })
-        val details = Incident(incident.ask()).detailText()
-        assertTrue(details.indexOf("Recent note") < details.indexOf("Old note"))
-        assertTrue(details.contains("Synthetic details <north>"))
+        val sections = Incident(incident.ask()).detailSections()
+        val notesText = sections.single { it.first == "Notes" }.second
+        assertTrue(notesText.indexOf("Recent note") < notesText.indexOf("Old note"))
+        assertEquals("Synthetic details <north>", sections.single { it.first == "Summary" }.second)
     }
 
     @Test fun hostedIncidentListPrioritizesSelfAndOpensCanonicalExpandedDetails() {
@@ -145,12 +155,15 @@ class CanonicalIncidentTest {
             val list = ui.schema()
             val rows = list.cards.filter { it.cardId.startsWith("takcad.incident.open") }
             assertEquals(2, rows.size)
-            assertTrue(rows.first().title.startsWith("Z mine"))
             assertTrue(rows.first().title.contains("Requested"))
+            assertEquals("Z mine", rows.first().content.getString("actionLabel"))
             assertTrue(MainUiSchemaContractValidator.validate(list, strictV1CardTypesOnly = true) is ContractValidationResult.Ok)
             ui.invoke("takcad.incident.open", Bundle().apply { putString("incidentId", "mine") })
             val details = ui.schema()
-            assertTrue(details.cards.single { it.cardId == "details" }.subtitle!!.contains("Z mine"))
+            assertEquals(listOf("takcad.bloodhound", "takcad.target"),
+                details.cards.take(2).map { it.cardId })
+            assertEquals(listOf("\uD83D\uDC3E", "\u2316"), details.cards.take(2).map { it.title })
+            assertEquals("Z mine\nACTIVE", details.cards.single { it.cardId == "incident.detail.0" }.subtitle)
             assertFalse(details.cards.any { it.cardId in setOf("limits", "takcad.incident.accept", "takcad.incident.decline") })
             runtime.accept("mine")
             runtime.awaitIdle()
