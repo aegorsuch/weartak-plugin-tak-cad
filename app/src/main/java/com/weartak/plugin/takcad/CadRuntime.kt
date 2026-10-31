@@ -22,8 +22,15 @@ class CadRuntime(
     context: Context,
     val store: IncidentStore,
     private val secrets: RoutingCredentials,
+    private val clock: () -> Long = System::currentTimeMillis,
     private val directions: (Position, Position, String) -> Route = RouteClient()::directions,
 ) {
+    companion object {
+        internal const val CAD_POLL_MS = 5_000L
+        internal const val CAD_MAX_BACKOFF_MS = 300_000L
+        private const val SERVER_PREFERENCE = "cadServerId"
+    }
+
     private val settings = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
     private val worker = Executors.newSingleThreadScheduledExecutor()
     private val listeners = CopyOnWriteArraySet<() -> Unit>()
@@ -38,6 +45,8 @@ class CadRuntime(
     @Volatile private var hostServices: CadHostServices? = null
     @Volatile private var hostCapabilities = CadHostCapabilities(emptyList(), emptySet(), false)
     @Volatile private var selectedServerId: String? = null
+    @Volatile private var cadFailures = 0
+    @Volatile private var nextAutoRefreshAt = 0L
     @Volatile var cadStatus = "Update WearTAK for CAD server access"
         private set
     @Volatile var bridgeSeen = false
@@ -55,9 +64,12 @@ class CadRuntime(
                 }
             }
         }, 10, 10, TimeUnit.SECONDS)
-        worker.scheduleWithFixedDelay({
-            if (running && storageReady && hostServices != null) attempt { refreshCad() }
-        }, 5, 5, TimeUnit.SECONDS)
+        worker.scheduleWithFixedDelay({ pollCad() }, CAD_POLL_MS, CAD_POLL_MS, TimeUnit.MILLISECONDS)
+    }
+
+    /** Automatic refresh; repeated failures back off exponentially instead of polling every interval. */
+    private fun pollCad() {
+        if (running && storageReady && hostServices != null && clock() >= nextAutoRefreshAt) attempt { refreshCad() }
     }
 
     fun restore() = enqueue {
@@ -88,16 +100,15 @@ class CadRuntime(
     fun isRunning(): Boolean = running
     fun supportsCad(): Boolean = hostServices != null
     fun canMapAction(action: String): Boolean = running && action in hostCapabilities.mapActions
-    fun canSelectServer(): Boolean = running && hostCapabilities.servers.size > 1
+    fun canSelectServer(): Boolean = running && hostCapabilities.servers.isNotEmpty()
+    fun servers(): List<CadServer> = hostCapabilities.servers
+    fun selectedServer(): String? = selectedServerId
     fun selectedServerName(): String? = hostCapabilities.servers.firstOrNull { it.id == selectedServerId }?.name
-    fun nextServerName(): String? {
-        val servers = hostCapabilities.servers
-        if (servers.size <= 1) return null
-        return servers[(servers.indexOfFirst { it.id == selectedServerId } + 1) % servers.size].name
-    }
     fun notifyHostedNavigation() = changed()
     internal fun close() { worker.shutdownNow() }
     internal fun awaitIdle() { worker.submit {}.get(30, TimeUnit.SECONDS) }
+    internal fun pollNow() { worker.submit { pollCad() }.get(30, TimeUnit.SECONDS) }
+    internal fun cadRetryDelayMs(): Long = (nextAutoRefreshAt - clock()).coerceAtLeast(0)
 
     fun attach(host: IWearTakPluginControl, services: CadHostServices? = null) {
         synchronized(gate) {
@@ -106,6 +117,7 @@ class CadRuntime(
             hostServices = services
             hostCapabilities = CadHostCapabilities(emptyList(), emptySet(), false)
             selectedServerId = null
+            resetCadBackoff()
             cadStatus = if (services == null) "Update WearTAK for CAD server access" else "Awaiting CAD server"
             running = false
             bridgeSeen = false
@@ -136,6 +148,7 @@ class CadRuntime(
         synchronized(gate) {
             running = false
             generation++
+            resetCadBackoff()
             if (detach) {
                 control = null
                 callback = null
@@ -170,11 +183,13 @@ class CadRuntime(
         val epoch = generation
         enqueue {
             checkCurrent(epoch)
+            resetCadBackoff()
             refreshCad()
         }
     }
 
-    fun nextServer() {
+    /** Re-reads host server list for the selector without contacting any CAD server. */
+    fun refreshServers() {
         val epoch = generation
         enqueue {
             checkCurrent(epoch)
@@ -184,9 +199,26 @@ class CadRuntime(
                 checkCurrent(epoch)
                 check(services === hostServices) { "Host connection changed" }
                 hostCapabilities = capabilities
-                val servers = capabilities.servers
-                check(servers.size > 1) { "Multiple connected CAD servers unavailable" }
-                selectedServerId = servers[(servers.indexOfFirst { it.id == selectedServerId } + 1) % servers.size].id
+            }
+            changed()
+        }
+    }
+
+    /** Selects and persists [serverId], then refreshes incidents from it once. */
+    fun selectServer(serverId: String) {
+        val epoch = generation
+        enqueue {
+            checkCurrent(epoch)
+            val services = requireNotNull(hostServices) { "Update WearTAK for CAD server access" }
+            val capabilities = services.capabilities()
+            synchronized(gate) {
+                checkCurrent(epoch)
+                check(services === hostServices) { "Host connection changed" }
+                hostCapabilities = capabilities
+                require(capabilities.servers.any { it.id == serverId }) { "CAD server no longer connected" }
+                check(settings.edit().putString(SERVER_PREFERENCE, serverId).commit()) { "Could not save CAD server" }
+                selectedServerId = serverId
+                resetCadBackoff()
                 cadStatus = "Refreshing CAD incidents"
             }
             changed()
@@ -221,9 +253,24 @@ class CadRuntime(
             completed = true
         } finally {
             synchronized(gate) {
-                if (!completed && epoch == generation && running) cadStatus = "CAD refresh failed; cached incidents"
+                if (epoch == generation && running) {
+                    if (completed) {
+                        resetCadBackoff()
+                    } else {
+                        cadStatus = "CAD refresh failed; cached incidents"
+                        cadFailures = (cadFailures + 1).coerceAtMost(16)
+                        val delay = (CAD_POLL_MS shl (cadFailures - 1).coerceAtMost(10)).coerceAtMost(CAD_MAX_BACKOFF_MS)
+                        nextAutoRefreshAt = clock() + delay
+                        Log.i("TakCad", "CAD refresh failure $cadFailures; next automatic retry in ${delay / 1000}s")
+                    }
+                }
             }
         }
+    }
+
+    private fun resetCadBackoff() {
+        cadFailures = 0
+        nextAutoRefreshAt = 0L
     }
 
     private fun refreshCadSnapshot(epoch: Long) {
@@ -235,7 +282,9 @@ class CadRuntime(
             checkCurrent(epoch)
             check(services === hostServices) { "Host connection changed" }
             hostCapabilities = capabilities
+            val preferred = settings.getString(SERVER_PREFERENCE, null)
             if (capabilities.servers.none { it.id == selectedServerId }) selectedServerId = null
+            if (selectedServerId == null && capabilities.servers.any { it.id == preferred }) selectedServerId = preferred
             if (selectedServerId == null && capabilities.servers.size == 1) selectedServerId = capabilities.servers.single().id
             selectedServerId
         }

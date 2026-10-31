@@ -25,6 +25,7 @@ class ResponderActivity : Activity() {
     private var step = 0
     private var routeJson: String? = null
     private var configuring = false
+    private var pickingServer = false
     private val observer: () -> Unit = { handler.post { if (!configuring) render() } }
     private val tick = object : Runnable {
         override fun run() {
@@ -73,17 +74,25 @@ class ResponderActivity : Activity() {
     private fun render() {
         if (isFinishing || isDestroyed) return
         surface()
-        text(getString(R.string.app_name), 22f)
-        text(runtime.lastError ?: runtime.message)
         val incidents = runtime.visibleIncidents()
-        if (selected == null) {
-            text(runtime.selectedServerName() ?: "CAD server")
-            text(runtime.lastError ?: runtime.cadStatus)
-            button("Refresh incidents", runtime.isRunning() && runtime.supportsCad()) { runtime.refreshIncidents() }
-            runtime.nextServerName()?.let { name ->
-                button("Server: $name", runtime.canSelectServer()) { runtime.nextServer() }
+        if (pickingServer && selected == null) {
+            for (server in runtime.servers()) {
+                val mark = if (server.id == runtime.selectedServer()) "\u2713 " else ""
+                button("$mark${server.name}", runtime.isRunning()) {
+                    pickingServer = false
+                    runtime.selectServer(server.id)
+                    render()
+                }
             }
-            if (incidents.isEmpty()) text(getString(R.string.empty))
+            button("Cancel") { pickingServer = false; render() }
+            return
+        }
+        if (selected == null) {
+            button("${runtime.selectedServerName() ?: "Select server"} \u25BE", runtime.canSelectServer()) {
+                pickingServer = true
+                runtime.refreshServers()
+                render()
+            }
             for (incident in incidents) {
                 val state = listOfNotNull(runtime.involvement(incident),
                     incident.ask.canonical?.status ?: stateLabel(incident.participation)).distinct().joinToString(" | ")
@@ -103,6 +112,7 @@ class ResponderActivity : Activity() {
             render()
             return
         }
+        text(runtime.lastError ?: runtime.message)
         text(incident.detailText(), 20f)
         if (incident.ask.canonical == null) text(stateLabel(incident.participation))
         if (incident.ask.canonical != null && incident.ask.position != null) {

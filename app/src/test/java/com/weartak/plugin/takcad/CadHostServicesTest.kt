@@ -74,10 +74,10 @@ class CadHostServicesTest {
         }
     }
 
-    private fun runtime(services: Services?): CadRuntime {
+    private fun runtime(services: Services?, clock: () -> Long = System::currentTimeMillis, clearSettings: Boolean = true): CadRuntime {
         val context = RuntimeEnvironment.getApplication()
-        context.getSharedPreferences("settings", 0).edit().clear().commit()
-        return CadRuntime(context, IncidentStore(folder.newFile().apply { delete() }), credentials).also {
+        if (clearSettings) context.getSharedPreferences("settings", 0).edit().clear().commit()
+        return CadRuntime(context, IncidentStore(folder.newFile().apply { delete() }), credentials, clock = clock).also {
             it.restore()
             it.attach(object : IWearTakPluginControl.Default() {
                 override fun getDeviceStatus() = DeviceStatusParcel(true, "Ready", Bundle().apply {
@@ -154,14 +154,14 @@ class CadHostServicesTest {
             assertEquals("Select CAD server", runtime.cadStatus)
             runtime.store.receive(CanonicalIncident.parse(record("unscoped").toString()).ask(), 1)
             assertTrue(runtime.visibleIncidents().isEmpty())
-            runtime.nextServer()
+            runtime.selectServer("server-a")
             runtime.awaitIdle()
             assertEquals("server-a", services.requests.single().getString(C.KEY_SERVER_ID))
             assertEquals("a", runtime.visibleIncidents().single().ask.id)
             val ui = HostedResponderUi(runtime)
             ui.invoke("takcad.incident.open", Bundle().apply { putString("incidentId", "a") })
             services.code = 403
-            runtime.nextServer()
+            runtime.selectServer("server-b")
             runtime.awaitIdle()
             assertTrue(runtime.visibleIncidents().isEmpty())
             assertFalse(ui.schema().cards.any { it.cardId == "details" })
@@ -172,6 +172,84 @@ class CadHostServicesTest {
             runtime.awaitIdle()
             assertEquals("b", runtime.visibleIncidents().single().ask.id)
             assertEquals("server-b", runtime.store.snapshot().single().serverId)
+        } finally { runtime.close() }
+    }
+
+    @Test fun serverPickerShowsCurrentSelectionAndSelectingRefreshesOnceAndPersists() {
+        val services = Services().apply {
+            servers = listOf("AFTAK", "NCTAK", "ODIN Local")
+            body = JSONArray().put(record("odin")).toString()
+        }
+        val runtime = runtime(services)
+        try {
+            val ui = HostedResponderUi(runtime)
+            val chip = ui.schema().cards.single { it.cardId == "takcad.server.choose" }
+            assertEquals("Select server \u25BE", chip.title)
+            assertTrue(chip.content.getBoolean("enabled"))
+            assertFalse(ui.schema().cards.any { it.cardId == "takcad.server.next" })
+            ui.invoke("takcad.server.choose", null)
+            runtime.awaitIdle()
+            assertTrue(services.requests.isEmpty())
+            val options = ui.schema().cards.filter { it.cardId.startsWith("takcad.server.select") }
+            assertEquals(listOf("AFTAK", "NCTAK", "ODIN Local"), options.map { it.title })
+            assertThrows(IllegalArgumentException::class.java) {
+                ui.invoke("takcad.server.select", Bundle().apply { putString("serverId", "unknown") })
+            }
+            assertThrows(IllegalArgumentException::class.java) {
+                ui.invoke("takcad.server.select", Bundle().apply { putString("incidentId", "ODIN Local") })
+            }
+            ui.invoke("takcad.server.select", Bundle().apply { putString("serverId", "ODIN Local") })
+            runtime.awaitIdle()
+            assertEquals(listOf("ODIN Local"), services.requests.map { it.getString(C.KEY_SERVER_ID) })
+            assertEquals("odin", runtime.visibleIncidents().single().ask.id)
+            assertEquals("ODIN Local \u25BE", ui.schema().cards.first().title)
+            ui.invoke("takcad.server.choose", null)
+            runtime.awaitIdle()
+            assertFalse(ui.schema().cards.any { it.cardType == "STATUS" })
+            val marked = ui.schema().cards.filter { it.cardId.startsWith("takcad.server.select") }.map { it.title }
+            assertEquals(listOf("AFTAK", "NCTAK", "\u2713 ODIN Local"), marked)
+            ui.invoke("takcad.server.cancel", null)
+            assertTrue(ui.schema().cards.any { it.cardId == "takcad.server.choose" })
+            assertEquals(1, services.requests.size)
+        } finally { runtime.close() }
+
+        val restored = runtime(services, clearSettings = false)
+        try {
+            assertEquals("ODIN Local", restored.selectedServer())
+            assertEquals("ODIN Local", services.requests.last().getString(C.KEY_SERVER_ID))
+        } finally { restored.close() }
+    }
+
+    @Test fun repeatedCadFailuresBackOffAutomaticPollingUntilSuccessOrManualRefresh() {
+        var now = 1_000_000L
+        val services = Services().apply { code = 500 }
+        val runtime = runtime(services, clock = { now })
+        try {
+            assertEquals(1, services.requests.size)
+            assertEquals(CadRuntime.CAD_POLL_MS, runtime.cadRetryDelayMs())
+            now += CadRuntime.CAD_POLL_MS - 1
+            runtime.pollNow()
+            assertEquals(1, services.requests.size)
+            now += 1
+            runtime.pollNow()
+            assertEquals(2, services.requests.size)
+            assertEquals(2 * CadRuntime.CAD_POLL_MS, runtime.cadRetryDelayMs())
+            repeat(10) {
+                now += runtime.cadRetryDelayMs()
+                runtime.pollNow()
+            }
+            assertEquals(12, services.requests.size)
+            assertEquals(CadRuntime.CAD_MAX_BACKOFF_MS, runtime.cadRetryDelayMs())
+            now += CadRuntime.CAD_POLL_MS
+            runtime.pollNow()
+            assertEquals(12, services.requests.size)
+            services.code = 200
+            runtime.refreshIncidents()
+            runtime.awaitIdle()
+            assertEquals(13, services.requests.size)
+            assertEquals(0, runtime.cadRetryDelayMs())
+            runtime.pollNow()
+            assertEquals(14, services.requests.size)
         } finally { runtime.close() }
     }
 

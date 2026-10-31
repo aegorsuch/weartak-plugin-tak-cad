@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">TAK CAD</string>
-    <string name="empty">No incidents</string>
     <string name="accept">Accept ask</string>
     <string name="decline">Decline locally</string>
     <string name="refresh_route">Refresh route</string>

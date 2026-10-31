@@ -10,11 +10,15 @@ import kotlin.math.ceil
 import com.weartak.plugin.sdk.host.v1.HostServicesContract as C
 
 class HostedResponderUi(private val runtime: CadRuntime) {
+    private companion object { const val SERVER_PAGE = 8 }
+
     private val navigation = ResponderNavigation(runtime.store, runtime::visibleIncidents)
     private var detailPage = 0
     private var routeTextPage = 0
     private var displayedRoute: String? = null
     private var displayedStep = -1
+    private var serverPicker = false
+    private var serverOffset = 0
 
     @Synchronized fun schema(now: Long = System.currentTimeMillis()): PluginMainUiSchemaParcel {
         val view = navigation.snapshot()
@@ -22,32 +26,47 @@ class HostedResponderUi(private val runtime: CadRuntime) {
         fun status(id: String, title: String, text: String) {
             cards += MainUiCardParcel(MainUiCardTypes.STATUS, id, utf8Prefix(title, 256), utf8Prefix(text, 256))
         }
-        fun action(id: String, label: String, enabled: Boolean = true, incidentId: String? = null, cardId: String = id) {
-            val args = if (incidentId != null) mapOf("incidentId" to incidentId) else emptyMap()
+        fun action(id: String, label: String, enabled: Boolean = true, incidentId: String? = null, cardId: String = id,
+                   serverId: String? = null) {
+            val args = when {
+                incidentId != null -> mapOf("incidentId" to incidentId)
+                serverId != null -> mapOf("serverId" to serverId)
+                else -> emptyMap()
+            }
             val boundedLabel = utf8Prefix(label, 256)
             cards += MainUiCardParcel(MainUiCardTypes.ACTION, cardId, boundedLabel,
                 content = MainUiActionContract.createContent(id, boundedLabel, enabled, args))
         }
-        status("status", "TAK CAD", runtime.lastError ?: runtime.message)
         val incident = view.incident
-        if (incident == null) {
-            status("server", runtime.selectedServerName() ?: "CAD server", runtime.lastError ?: runtime.cadStatus)
-            action("takcad.incidents.refresh", "Refresh incidents", runtime.isRunning() && runtime.supportsCad())
-            runtime.nextServerName()?.let {
-                action("takcad.server.next", "Server: ${utf8Prefix(it, 220)}", runtime.canSelectServer())
+        if (incident != null) status("status", "TAK CAD", runtime.lastError ?: runtime.message)
+        if (serverPicker && incident == null) {
+            val servers = runtime.servers()
+            val selected = runtime.selectedServer()
+            serverOffset = serverOffset.coerceIn(0, ((servers.size - 1) / SERVER_PAGE).coerceAtLeast(0) * SERVER_PAGE)
+            servers.drop(serverOffset).take(SERVER_PAGE).forEachIndexed { index, server ->
+                val mark = if (server.id == selected) "\u2713 " else ""
+                action("takcad.server.select", "$mark${utf8Prefix(server.name, 220)}", runtime.isRunning(),
+                    cardId = if (index == 0) "takcad.server.select" else "takcad.server.select.$index", serverId = server.id)
             }
-            if (view.incidents.isEmpty()) {
-                status("empty", "No incidents", "")
-            } else {
-                view.incidents.drop(view.incidentOffset).take(6).forEachIndexed { index, item ->
-                    val state = listOfNotNull(runtime.involvement(item), item.ask.canonical?.status
-                        ?: participation(item.participation)).distinct().joinToString(" | ")
-                    action("takcad.incident.open", "${utf8Prefix(item.ask.title, 180)}\n$state", incidentId = item.ask.id,
-                        cardId = if (index == 0) "takcad.incident.open" else "takcad.incident.open.$index")
-                }
-                action("takcad.incidents.previous", "Previous incident", view.incidentOffset > 0)
+            if (servers.size > SERVER_PAGE) {
+                action("takcad.servers.previous", "Previous servers", serverOffset > 0)
+                action("takcad.servers.next", "More servers", serverOffset + SERVER_PAGE < servers.size)
+            }
+            action("takcad.server.cancel", "Cancel")
+        } else if (incident == null) {
+            action("takcad.server.choose", "${utf8Prefix(runtime.selectedServerName() ?: "Select server", 200)} \u25BE",
+                runtime.canSelectServer())
+            view.incidents.drop(view.incidentOffset).take(6).forEachIndexed { index, item ->
+                val state = listOfNotNull(runtime.involvement(item), item.ask.canonical?.status
+                    ?: participation(item.participation)).distinct().joinToString(" | ")
+                action("takcad.incident.open", "${utf8Prefix(item.ask.title, 180)}\n$state", incidentId = item.ask.id,
+                    cardId = if (index == 0) "takcad.incident.open" else "takcad.incident.open.$index")
+            }
+            if (view.incidents.size > 6) {
+                action("takcad.incidents.previous", "Previous incidents", view.incidentOffset > 0)
                 action("takcad.incidents.next", "Next incidents", view.incidentOffset + 6 < view.incidents.size)
             }
+            action("takcad.incidents.refresh", "Refresh", runtime.isRunning() && runtime.supportsCad())
         } else {
             val id = incident.ask.id
             val details = pages(incident.detailText())
@@ -110,7 +129,8 @@ class HostedResponderUi(private val runtime: CadRuntime) {
 
     @Synchronized private fun invokeLocked(actionId: String?, args: Bundle?) {
         val id = requireNotNull(actionId) { "Missing hosted action" }
-        require(args == null || args.keySet().all { it == "incidentId" }) { "Unexpected hosted action arguments" }
+        val allowedArg = if (id == "takcad.server.select") "serverId" else "incidentId"
+        require(args == null || args.keySet().all { it == allowedArg }) { "Unexpected hosted action arguments" }
         fun selectedId(): String {
             val selected = requireNotNull(navigation.snapshot().incident) { "Select incident first" }.ask.id
             require(args?.getString("incidentId") == selected) { "Action does not match selected incident" }
@@ -126,7 +146,26 @@ class HostedResponderUi(private val runtime: CadRuntime) {
             "takcad.incidents.previous" -> navigation.pageIncidents(-6)
             "takcad.incidents.next" -> navigation.pageIncidents(6)
             "takcad.incidents.refresh" -> runtime.refreshIncidents()
-            "takcad.server.next" -> runtime.nextServer()
+            "takcad.server.choose" -> {
+                require(navigation.snapshot().incident == null) { "Return to incidents first" }
+                serverPicker = true
+                serverOffset = 0
+                runtime.refreshServers()
+            }
+            "takcad.server.select" -> {
+                require(serverPicker) { "Open CAD server list first" }
+                val serverId = requireNotNull(args?.getString("serverId")) { "Missing serverId" }
+                require(runtime.servers().any { it.id == serverId }) { "CAD server no longer listed" }
+                serverPicker = false
+                runtime.selectServer(serverId)
+            }
+            "takcad.server.cancel" -> serverPicker = false
+            "takcad.servers.previous", "takcad.servers.next" -> {
+                require(serverPicker) { "Open CAD server list first" }
+                val next = serverOffset + if (id.endsWith(".next")) SERVER_PAGE else -SERVER_PAGE
+                require(next >= 0 && next < runtime.servers().size) { "Server page unavailable" }
+                serverOffset = next
+            }
             "takcad.bloodhound" -> runtime.mapAction(selectedId(), C.ACTION_BLOODHOUND)
             "takcad.target" -> runtime.mapAction(selectedId(), C.ACTION_TARGET)
             "takcad.incident.accept" -> runtime.accept(selectedId())

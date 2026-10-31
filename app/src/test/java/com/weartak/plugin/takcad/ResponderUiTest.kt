@@ -36,7 +36,8 @@ class ResponderUiTest {
             val scroll = root.getChildAt(0) as ScrollView
             val content = scroll.getChildAt(0) as LinearLayout
             val children = (0 until content.childCount).map { content.getChildAt(it) }
-            assertTrue(children.filterIsInstance<TextView>().any { it.text == "No incidents" })
+            assertEquals("Select server \u25BE", (children.first() as Button).text)
+            assertFalse(children.any { it !is Button })
             assertFalse(children.filterIsInstance<TextView>().any { it.text.contains("protocol extension") })
             assertEquals(R.mipmap.ic_launcher, activity.applicationInfo.icon)
             assertNotNull(activity.getDrawable(activity.applicationInfo.icon))
