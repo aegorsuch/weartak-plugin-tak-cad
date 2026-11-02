@@ -1,15 +1,10 @@
 # WearTAK TAK-CAD responder
 
+## Purpose and Capabilities
+
 Native Wear OS responder plugin. Dispatcher authoring stays in WinTAK.
-GPL-3.0-or-later; complete license in `LICENSE`, upstream attribution in `NOTICE`.
-Source only: no vendor SDK, wrapper JAR, APK, certificate, or signing material.
 
-Versioning matches WearTAK/MOPP/LACE: local version `5.8.4` / code `584`;
-Forge pipeline N uses `5.8.4-pN+<CI_COMMIT_SHORT_SHA>` / code `5840000 + N`.
-Pipeline numbers outside 0-9999 or malformed pipeline values fail configuration
-rather than producing an invalid or silently downgraded CI version.
-
-## Implemented
+### Implemented
 
 - Main screen lists incidents, with this responder's requested or responding
   incidents first, then other active incidents. Canonical matching uses the
@@ -129,7 +124,60 @@ rather than producing an invalid or silently downgraded CI version.
   text/card bounds. The launcher remains a development fallback for routing
   setup until a secure hosted credential-input contract exists.
 
-## Build and verification
+## Status
+
+Source only: no vendor SDK, wrapper JAR, APK, certificate, or signing material.
+
+Not field-validated with a watch, real WearTAK host, dispatcher, or live routing key.
+Do not treat passing source tests/build as an operational deployment approval.
+Host integration and protocol limitations are documented under
+[Required host integration](#required-host-integration) and
+[Proven upstream protocol and remaining gaps](#proven-upstream-protocol-and-remaining-gaps).
+
+## Point of Contacts
+
+Project development and operational points of contact are not specified in this
+repository.
+
+## Ports Required
+
+| Connection | Port / transport | Requirement |
+|---|---|---|
+| Connected TAK Server CAD API | 8443 / TCP, HTTPS | Optional Host Services bridge uses the connected host's authenticated server connection; see [Optional Host Services extension](#optional-host-services-extension). |
+| OpenRouteService | 443 / TCP, HTTPS | Outbound routing requests when enabled; see [Routing setup and privacy](#routing-setup-and-privacy). |
+
+CoT transport configuration and ports are managed by the WearTAK host, not
+specified by this plugin. Plugin binding uses the signature-protected Android
+Binder service described under [Required host integration](#required-host-integration).
+Build and CI network dependencies are listed under [Compilation](#compilation).
+
+## Equipment Required
+
+- Wear OS watch meeting the application's Android API 30 minimum, with a
+  compatible WearTAK host and matching signing certificate for plugin binding.
+- Host-provided connectivity and a fresh GPS snapshot for route computation;
+  an actual WearTAK self UID and OpenRouteService API key for routing setup.
+- Connected TAK Server with the TAK-CAD server plugin for canonical CAD access
+  through the optional Host Services bridge. Dispatcher authoring stays in WinTAK.
+- Development workstation and external SDK artifacts described under
+  [Build and verification](#build-and-verification) when compiling from source.
+
+## Equipment Supported
+
+The manifest requires watch hardware; the application sets minimum Android API 30
+and target API 34. No specific watch model or field-tested device compatibility
+matrix is documented. Host/SDK compatibility requirements and older-host
+limitations are detailed below; these build requirements do not establish
+operational device support.
+
+## Compilation
+
+Versioning matches WearTAK/MOPP/LACE: local version `5.8.4` / code `584`;
+Forge pipeline N uses `5.8.4-pN+<CI_COMMIT_SHORT_SHA>` / code `5840000 + N`.
+Pipeline numbers outside 0-9999 or malformed pipeline values fail configuration
+rather than producing an invalid or silently downgraded CI version.
+
+### Build and verification
 
 Requires JDK 17, Android SDK platform 34, Gradle 8.10.2, and the WearTAK plugin SDK
 matching the host, including `MainUiActionContract` and `MainUiCardTypes.ACTION`.
@@ -162,7 +210,7 @@ worker-only bridge calls, exact GET path/query, multi-server selection, disconne
 stop/rebind during fetch, source isolation, HTTP failures, malformed/oversize
 responses, atomic snapshots, and map-action failures without mutation replay.
 
-## GitHub CI and release automation
+### GitHub CI and release automation
 
 `.github/workflows/android.yml` runs for PRs, branch/tag pushes, and manual dispatch.
 It installs JDK 17 / Android 34 / Gradle 8.10.2, checks out an immutable SDK source
@@ -227,7 +275,7 @@ GitLab remote is not automatically mirrored/pushed by these files.
 CI helper checks: `python -m unittest discover -s ci -p "test_*.py" -v` and
 `node --test ci/release-testing/create_checklist.test.cjs`.
 
-## TAK.gov Forge CI signing and publication
+### TAK.gov Forge CI signing and publication
 
 Canonical source is `weartak-plugins/weartak-plugin-tak-cad` on
 `git.tak.gov`, default branch `main`. `.gitlab-ci.yml` verifies merge requests,
@@ -310,7 +358,9 @@ no new token, persistent access, GitLab variable, or mirror configuration is
 required. Ongoing automatic publication remains separate, unconfigured work.
 Existing GitHub debug-prerelease/checklist automation above remains unchanged.
 
-## Required host integration
+## Developer Notes
+
+### Required host integration
 
 **Current template SDK has no incoming CoT subscription API.** Its
 `IWearTakHostCallback.onCotReadyEvent` is plugin-to-host, not incoming transport.
@@ -333,7 +383,7 @@ standalone development activity.
 No exported broadcast receiver, public import intent, or unauthenticated bridge
 is provided.
 
-### Hosted page contract
+#### Hosted page contract
 
 `pluginId` and `packageName` are `com.weartak.plugin.takcad`. Capabilities advertise
 `hostedMainUi=true`, `externalMainActivity=false`, `hostedSettingsUi=false`.
@@ -372,7 +422,7 @@ Schema/state contain no ORS key; hosted secure token/UID setup is **unavailable*
 until SDK/host supply a reviewed secret-input/provisioning contract. Development
 fallback is not claimed to satisfy that missing in-menu configuration feature.
 
-### Optional Host Services extension
+#### Optional Host Services extension
 
 Discover `HostServicesContract.fromHostExtras(init.hostExtras)` during validated
 initialization; `null` means an older host. All synchronous extension methods run
@@ -423,7 +473,7 @@ Local state is bounded to 100 incidents, 100 responders per incident, and 20 MB;
 capacity errors are explicit, not silent eviction. Operational retention and
 authenticated incident closure require a host/dispatcher contract.
 
-## Routing setup and privacy
+### Routing setup and privacy
 
 For development only, open standalone TAK-CAD launcher > Routing setup.
 Host never launches it as part of the TAK-CAD menu flow. Enter actual WearTAK UID and an
@@ -446,7 +496,7 @@ HTTP/key/quota/route errors remain visible and do not mark a pending ask accepte
 No external route service is contacted by tests. Routes are advisory: observe
 road conditions and agency procedures.
 
-## Proven upstream protocol and remaining gaps
+### Proven upstream protocol and remaining gaps
 
 Evidence pinned to
 [`raytheonbbn/tak-cad@9f60ae0`](https://github.com/raytheonbbn/tak-cad/tree/9f60ae056057b7496c65688e3f4acd86a398438f).
@@ -490,5 +540,10 @@ CoT must be authenticated and appropriately routed by host: legacy payloads have
 no per-responder recipient or authorization signature. This app cannot prove who
 authored a received event beyond its trusted host transport.
 
-Not field-validated with a watch, real WearTAK host, dispatcher, or live routing key.
-Do not treat passing source tests/build as an operational deployment approval.
+## License
+
+GPL-3.0-or-later; complete license in `LICENSE`, upstream attribution in `NOTICE`.
+See [LICENSE](LICENSE) and [NOTICE](NOTICE). SDKs and build dependencies retain
+their respective licenses. NOTICE records separate artwork provenance and
+distribution-review limitations; this README reorganization does not change
+source, dependency, or artwork licensing.
