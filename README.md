@@ -245,7 +245,8 @@ outside this repository. No host/template SDK artifact is overwritten here.
 The additive Host Services SDK is provisioned separately by `ci/fetch_host_sdk.py`
 from the approved personal public source mirror
 `https://github.com/aegorsuch/weartak-wearos.git`, at a full reviewed immutable
-commit `782d8a7e791dd70750d567e22115b739332c04ba` (Host Services SDK 1.0.0).
+commit `28a9db6c233928cf46668783101eec2b679f46cf` (Host Services SDK 1.0.0,
+with authenticated TAK Artifactory support for standalone Forge builds).
 `WEARTAK_HOST_SDK_REVISION` can override that pin with another full reviewed
 40-character commit. No Forge credential or company-mirror access is required.
 CI installs Android platform 35 for this standalone library, then runs the pinned
@@ -338,25 +339,48 @@ only `dist/WearTAK-Plugin-TAK-CAD-<version>-p<pipeline>.apk` and its
 `dist/SHA256SUMS` checksum as a downloadable CI artifact for 30 days, matching
 the WearTAK plugin release naming convention and Sextant/LACE main-build artifact
 retention. APK version and embedded pipeline IID come from the manifest, and
-embedded IID must match `CI_PIPELINE_IID`. The APK is copied into that artifact
-directory only after exact certificate verification succeeds.
+embedded IID and short commit SHA must match the Forge pipeline. The APK is
+copied into that artifact directory only after exact certificate verification
+succeeds.
 Merge requests, unprotected branches, failed signatures, and debug builds cannot
 create this production artifact. Signing keystore/properties are removed before
 artifact upload; no APK or signing material is committed.
 
-**No automatic Forge GitHub publisher or persistent remote mirror is enabled.**
-The user authorized scoped manual source mirroring and production APK publication
-to personal `aegorsuch/weartak-plugin-tak-cad`, never a company repository.
-Publication must wait for the protected-main Forge signature check, recheck that
-personal main is an ancestor of the exact canonical source SHA, and use only a
-normal fast-forward push. Divergence stops publication; no force overwrite.
-Publish the verified production APK as
-`WearTAK-Plugin-TAK-CAD-<version>-p<pipeline>.apk` and matching SHA256SUMS with
-that source SHA in release notes. Do not substitute a locally debug-signed APK.
-Existing authenticated operator tools are sufficient for this one-time flow;
-no new token, persistent access, GitLab variable, or mirror configuration is
-required. Ongoing automatic publication remains separate, unconfigured work.
-Existing GitHub debug-prerelease/checklist automation above remains unchanged.
+#### Stable GitHub release and Market refresh
+
+After all verification jobs pass on a protected canonical Forge `main` push,
+`publish-github-stable` serializes updates to the existing
+[personal rolling release](https://github.com/aegorsuch/weartak-plugin-tak-cad/releases/tag/TAK.gov-Forge-CI-CD-Pipeline-Release).
+It uses only that pipeline's verified artifact, downloads the uploaded APK and
+its versioned `-SHA256SUMS` to verify their hashes, then checks the published
+release and removes only older publisher-owned assets. Use the checksum linked
+in the release notes; legacy manual assets (including `SHA256SUMS`) are retained
+and do not describe the new APK. The notes identify the actual canonical commit.
+The publisher does not push source or create/move tags. Coordinate any manual
+changes to the rolling release outside the serialized publish job. Existing
+GitHub debug-prerelease/checklist automation is unchanged.
+
+Create two separate [fine-grained GitHub tokens](https://github.com/settings/personal-access-tokens/new).
+In [TAK-CAD's GitLab CI/CD variables](https://git.tak.gov/weartak-plugins/weartak-plugin-tak-cad/-/settings/ci_cd),
+set both **protected**, **masked**, and scoped to `github-stable-release`:
+
+| Variable | Only repository access | Permission |
+| --- | --- | --- |
+| `TAK_CAD_GITHUB_TOKEN` | `aegorsuch/weartak-plugin-tak-cad` | Contents: write |
+| `MARKET_CATALOG_DISPATCH_TOKEN` | `aegorsuch/weartak-wearos` | Actions: write |
+
+Keep the fixed tag and mutable stable release in place. The
+[Market workflow](https://github.com/aegorsuch/weartak-wearos/actions/workflows/publish-market-catalog.yml)
+must be dispatchable on `main`; its catalog and install trust checks are
+unchanged. Only a verified release triggers immediate refresh. If notification
+fails, the stable release remains published. Fix the Market credential or
+connectivity and retry **the same publish job** while its Forge artifacts remain
+available. It rechecks downloads and release state, skips superseded pipelines,
+and does not reupload healthy assets. If an incomplete upload blocks a retry,
+inspect and remove only that pipeline's failed publisher-owned asset before
+retrying. Do not delete the fixed tag, stable release, or prior usable APKs.
+The hourly Market refresh still covers manually published stable releases and
+missed notifications.
 
 ## Developer Notes
 

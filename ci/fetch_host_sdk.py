@@ -9,7 +9,7 @@ import sys
 from fetch_sdk import checkout_sdk
 
 HOST_REPOSITORY = "https://github.com/aegorsuch/weartak-wearos.git"
-DEFAULT_HOST_REVISION = "782d8a7e791dd70750d567e22115b739332c04ba"
+DEFAULT_HOST_REVISION = "28a9db6c233928cf46668783101eec2b679f46cf"
 MODULE = "weartak-plugin-host-services-sdk"
 
 

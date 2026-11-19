@@ -39,7 +39,9 @@ def release_asset_filename(plugin_name, version_name, pipeline_iid):
     return f"WearTAK-Plugin-{plugin_name}-{version}-p{pipeline_iid}.apk"
 
 
-def verify_release_signature(apk, apksigner, artifact_directory=None, pipeline_iid=None):
+def verify_release_signature(
+    apk, apksigner, artifact_directory=None, pipeline_iid=None, source_short_sha=None
+):
     apk = Path(apk)
     apksigner = Path(apksigner)
     if not apk.is_file():
@@ -69,11 +71,13 @@ def verify_release_signature(apk, apksigner, artifact_directory=None, pipeline_i
     if artifact_directory is not None:
         if pipeline_iid is None:
             pipeline_iid = os.environ.get("CI_PIPELINE_IID")
-        filename = release_asset_filename(
-            PLUGIN_NAME,
-            _read_version_name(apk, apksigner.with_name("aapt")),
-            pipeline_iid,
-        )
+        version = _read_version_name(apk, apksigner.with_name("aapt"))
+        filename = release_asset_filename(PLUGIN_NAME, version, pipeline_iid)
+        if source_short_sha is not None and (
+            not re.fullmatch(r"[0-9a-f]{8}", source_short_sha)
+            or not version.endswith(f"-p{pipeline_iid}+{source_short_sha}")
+        ):
+            raise RuntimeError("APK version does not match the canonical pipeline and commit.")
         artifact_directory = Path(artifact_directory)
         artifact_directory.mkdir(parents=True, exist_ok=False)
         artifact = artifact_directory / filename
@@ -118,7 +122,9 @@ def main(argv=None):
             "Usage: verify_release_signature.py <release.apk> <apksigner> [artifact-directory]"
         )
     artifact_directory = argv[2] if len(argv) == 3 else None
-    fingerprint = verify_release_signature(argv[0], argv[1], artifact_directory)
+    fingerprint = verify_release_signature(
+        argv[0], argv[1], artifact_directory, source_short_sha=os.environ.get("CI_COMMIT_SHORT_SHA")
+    )
     print(f"Release APK signature verified: {fingerprint}")
 
 

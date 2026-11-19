@@ -14,6 +14,7 @@ workflow:
 
 stages:
   - verify
+  - publish
 
 variables:
   ANDROID_HOME: "$CI_PROJECT_DIR/.ci-tools/android-sdk"
@@ -110,6 +111,18 @@ forge-verify:
         - app/build/test-results/test*UnitTest/TEST-*.xml
         - .ci-sdk/build/test-results/test*UnitTest/TEST-*.xml
 
-# Production signing is checked only on protected default-branch pushes using the
-# inherited masked variables. Only the certificate-verified APK and SHA256SUMS are
-# retained for 30 days. No GitHub APK publisher is enabled.
+publish-github-stable:
+  stage: publish
+  image: python:3.12-slim
+  timeout: 10m
+  interruptible: false
+  resource_group: tak-cad-github-stable
+  environment:
+    name: github-stable-release
+    action: access
+  dependencies:
+    - forge-verify
+  rules:
+    - if: '$CI_SERVER_HOST == "git.tak.gov" && $CI_PROJECT_PATH == "weartak-plugins/weartak-plugin-tak-cad" && $CI_COMMIT_BRANCH == "main" && $CI_DEFAULT_BRANCH == "main" && $CI_COMMIT_REF_PROTECTED == "true" && $CI_PIPELINE_SOURCE == "push"'
+  script:
+    - python ci/publish_github_release.py
