@@ -74,6 +74,21 @@ class ReleaseSignatureTest(unittest.TestCase):
             "WearTAK-Plugin-TAK-CAD-5.8.4-p25.apk",
         )
 
+    @patch("verify_release_signature.subprocess.run")
+    def test_rejects_artifact_from_different_commit_before_retention(self, run):
+        run.side_effect = [
+            self.verified_signer(),
+            subprocess.CompletedProcess(
+                [], 0, "package: name='com.weartak.plugin.takcad' versionName='5.8.4-p25+abcdef12'\n", "",
+            ),
+        ]
+        directory = Path(self.temporary_directory.name) / "dist"
+        with self.assertRaisesRegex(RuntimeError, "canonical pipeline and commit"):
+            verify_release_signature(
+                self.apk, self.apksigner, directory, pipeline_iid=25, source_short_sha="deadbeef",
+            )
+        self.assertFalse(directory.exists())
+
     def test_asset_filename_rejects_mismatched_pipeline(self):
         with self.assertRaisesRegex(ValueError, "does not match"):
             release_asset_filename("TAK-CAD", "5.8.4-p24+abc123", 25)
