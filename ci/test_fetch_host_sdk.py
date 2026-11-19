@@ -9,7 +9,7 @@ from fetch_host_sdk import DEFAULT_HOST_REVISION, HOST_REPOSITORY, MODULE, main
 
 class HostSdkProvisioningTest(unittest.TestCase):
     def test_default_is_reviewed_full_source_pin(self):
-        self.assertEqual(DEFAULT_HOST_REVISION, "782d8a7e791dd70750d567e22115b739332c04ba")
+        self.assertEqual(DEFAULT_HOST_REVISION, "28a9db6c233928cf46668783101eec2b679f46cf")
         with tempfile.TemporaryDirectory() as root, patch.dict(os.environ, {}, clear=True), \
                 patch("fetch_host_sdk.checkout_sdk") as checkout:
             directory = Path(root) / "host"

@@ -245,7 +245,8 @@ outside this repository. No host/template SDK artifact is overwritten here.
 The additive Host Services SDK is provisioned separately by `ci/fetch_host_sdk.py`
 from the approved personal public source mirror
 `https://github.com/aegorsuch/weartak-wearos.git`, at a full reviewed immutable
-commit `782d8a7e791dd70750d567e22115b739332c04ba` (Host Services SDK 1.0.0).
+commit `28a9db6c233928cf46668783101eec2b679f46cf` (Host Services SDK 1.0.0,
+with authenticated TAK Artifactory support for standalone Forge builds).
 `WEARTAK_HOST_SDK_REVISION` can override that pin with another full reviewed
 40-character commit. No Forge credential or company-mirror access is required.
 CI installs Android platform 35 for this standalone library, then runs the pinned
