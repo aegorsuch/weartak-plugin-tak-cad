@@ -19,8 +19,8 @@ android {
         applicationId = "com.weartak.plugin.takcad"
         minSdk = 30
         targetSdk = 34
-        val baseVersionCode = 584
-        val baseVersionName = "5.8.4"
+        val baseVersionCode = 590
+        val baseVersionName = "5.9.0"
         val pipeline = System.getenv("CI_PIPELINE_IID")
         if (pipeline != null) {
             val iid = pipeline.toIntOrNull()
