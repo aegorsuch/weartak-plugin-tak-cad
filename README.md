@@ -172,8 +172,8 @@ operational device support.
 
 ## Compilation
 
-Versioning matches WearTAK/MOPP/LACE: local version `5.8.4` / code `584`;
-Forge pipeline N uses `5.8.4-pN+<CI_COMMIT_SHORT_SHA>` / code `5840000 + N`.
+Versioning matches WearTAK/MOPP/LACE: local version `5.9.0` / code `590`;
+Forge pipeline N uses `5.9.0-pN+<CI_COMMIT_SHORT_SHA>` / code `5900000 + N`.
 Pipeline numbers outside 0-9999 or malformed pipeline values fail configuration
 rather than producing an invalid or silently downgraded CI version.
 
